@@ -1,0 +1,70 @@
+{
+  "_comment": [
+    "Describes how each checkpoint must be preprocessed at inference time.",
+    "infer.load_model() and infer.preprocess() read from here rather than from",
+    "literals in the source, which is what let training and inference drift",
+    "apart (F-01). Every new run writes an entry via train.save_checkpoint().",
+    "",
+    "WARNING: the four 2023 checkpoints below were trained and evaluated with",
+    "the bugs described in potential-fixes.md (F-01 through F-10) still live.",
+    "Their `metrics` fields record what was *reported* in 2023, not what a",
+    "correct harness measures. Run `python evaluate.py --all` to fill in",
+    "`metrics_verified`."
+  ],
+  "manifest_version": 2,
+  "models": {
+    "path raise 15.pt": {
+      "arch": "unet",
+      "in_channels": 3,
+      "out_channels": 1,
+      "bilinear": false,
+      "stats_key": "all",
+      "threshold": 0.5,
+      "trained_on": "swiss-dop25-all",
+      "epochs": 15,
+      "metrics_reported_2023": null,
+      "metrics_verified": null
+    },
+    "path raise 100.pt": {
+      "arch": "unet",
+      "in_channels": 3,
+      "out_channels": 1,
+      "bilinear": false,
+      "stats_key": "all",
+      "threshold": 0.5,
+      "trained_on": "swiss-dop25-all",
+      "epochs": 100,
+      "metrics_reported_2023": null,
+      "metrics_verified": null
+    },
+    "path raise 130.pt": {
+      "arch": "unet",
+      "in_channels": 3,
+      "out_channels": 1,
+      "bilinear": false,
+      "stats_key": "all",
+      "threshold": 0.5,
+      "trained_on": "swiss-dop25-all",
+      "epochs": 130,
+      "metrics_reported_2023": {
+        "note": "Measured with BatchNorm in TRAIN mode (F-03) and with the empty-tile IoU inversion (F-08). Not a valid measurement.",
+        "test": { "iou": 0.5566, "accuracy": 0.9033, "recall": 0.6952, "precision": 0.7268 },
+        "val": { "iou": 0.6105, "accuracy": 0.9196, "recall": 0.7733, "precision": 0.7693 },
+        "train": { "iou": 0.7524, "accuracy": 0.9582, "recall": 0.8629, "precision": 0.8535 }
+      },
+      "metrics_verified": null
+    },
+    "path raise 230.pt": {
+      "arch": "unet",
+      "in_channels": 3,
+      "out_channels": 1,
+      "bilinear": false,
+      "stats_key": "all",
+      "threshold": 0.5,
+      "trained_on": "swiss-dop25-all",
+      "epochs": 230,
+      "metrics_reported_2023": null,
+      "metrics_verified": null
+    }
+  }
+}
