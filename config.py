@@ -118,6 +118,13 @@ class TrainConfig:
     seed: int = 0
     amp: bool = True
 
+    # tracking — F-24. Requires `uv pip install wandb` and `wandb login`.
+    # Degrades to a no-op if either is missing; runs/<ts>/history.json is
+    # written either way, so nothing depends on the network.
+    wandb: bool = False
+    wandb_project: str = "rooftop-solar"
+    wandb_run_name: str | None = None
+
     extra: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:

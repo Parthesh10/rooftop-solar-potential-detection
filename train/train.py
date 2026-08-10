@@ -33,11 +33,11 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-import numpy as np
 import torch
 
 from config import RUNS_ROOT, TrainConfig
 from evaluate import evaluate
+from tracking import Tracker
 from utils import get_device, pad_to_multiple, unpad
 
 __all__ = ["History", "training_model", "build_optimizer", "build_scheduler", "save_checkpoint"]
@@ -204,6 +204,16 @@ def training_model(
     run_dir.mkdir(parents=True, exist_ok=True)
 
     history = History(run_dir=str(run_dir))
+
+    # F-24: optional W&B. No-op unless cfg.wandb is set AND wandb is installed
+    # and logged in; runs/<ts>/history.json is written regardless.
+    tracker = Tracker(
+        enabled=cfg.wandb,
+        project=cfg.wandb_project,
+        run_name=cfg.wandb_run_name or run_dir.name,
+        config={**cfg.to_dict(), "git_sha": _git_sha(), "device": str(device)},
+    )
+
     if val_loader is None and verbose:
         print(
             "[train] WARNING: no val_loader — there will be no early stopping and "
@@ -272,6 +282,7 @@ def training_model(
         )
 
         improved = False
+        val = None
         if val_loader is not None and (epoch % max(cfg.val_every, 1) == 0
                                        or epoch == num_epochs - 1):
             val_loss = _validate_loss(model, val_loader, loss_function, device, use_amp)
@@ -301,6 +312,23 @@ def training_model(
         if verbose:
             print(msg)
 
+        payload = {
+            "train/loss": epoch_loss,
+            "train/iou": epoch_iou,
+            "lr": history.lr[-1],
+            "epoch_seconds": time.time() - t0,
+        }
+        if val is not None:
+            payload.update({
+                "val/loss": history.val_loss[-1],
+                "val/iou": val["iou"],
+                "val/f1": val.get("f1"),
+                "val/precision": val.get("precision"),
+                "val/recall": val.get("recall"),
+                "val/undefined_tiles": val.get("iou_undefined"),
+            })
+        tracker.log(payload, step=epoch)
+
         epochs_since_improvement = 0 if improved else epochs_since_improvement + 1
         if (
             val_loader is not None
@@ -319,6 +347,18 @@ def training_model(
     (run_dir / "history.json").write_text(
         json.dumps(history.to_dict(), indent=2), encoding="utf-8"
     )
+
+    tracker.summary({
+        "best/val_iou": history.best_val_iou if history.best_epoch is not None else None,
+        "best/epoch": history.best_epoch,
+        "epochs_run": len(history.epochs),
+        "run_dir": str(run_dir),
+    })
+    best_ckpt = run_dir / "best.pt"
+    if best_ckpt.exists():
+        tracker.save_artifact(best_ckpt, name=f"unet-{run_dir.name}", kind="model")
+    tracker.finish()
+
     if verbose:
         print(f"[train] artefacts written to {run_dir}")
 
