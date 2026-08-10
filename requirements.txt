@@ -1,0 +1,32 @@
+# Rooftop Solar Potential Detection — pinned dependencies
+#
+# Install torch FIRST from the CUDA-matched index, then the rest:
+#
+#   uv venv --python 3.11
+#   .venv\Scripts\activate
+#   uv pip install torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cu124
+#   uv pip install -r requirements.txt
+#
+# For CPU-only, swap the index URL for .../whl/cpu
+# See F-22 in potential-fixes.md.
+
+torch==2.5.1
+torchvision==0.20.1
+
+numpy==1.26.4
+scipy==1.14.1
+pillow==11.0.0
+opencv-python==4.10.0.84
+matplotlib==3.9.2
+scikit-learn==1.5.2
+tqdm==4.67.1
+
+# Optional — richer augmentation (the dataloader falls back to torchvision
+# transforms if this is absent, so it is not required to train).
+# albumentations==1.4.21
+
+# Optional — metric cross-checks in tests/
+# torchmetrics==1.6.0
+
+# Dev
+pytest==8.3.4

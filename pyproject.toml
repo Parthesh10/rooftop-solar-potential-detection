@@ -1,0 +1,21 @@
+[project]
+name = "rooftop-solar-potential-detection"
+version = "0.2.0"
+description = "Rooftop available-area segmentation from aerial imagery for PV potential estimation"
+requires-python = ">=3.10,<3.13"
+readme = "README.md"
+
+# Runtime deps are pinned in requirements.txt because torch must be installed
+# from a CUDA-matched index URL that pyproject cannot express portably.
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"

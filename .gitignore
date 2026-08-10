@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Notebooks
+.ipynb_checkpoints/
+
+# Model weights — publish via GitHub Releases / Git LFS, not in-tree.
+# See F-21 in potential-fixes.md.
+*.pt
+*.pth
+*.onnx
+*.ckpt
+
+# Data — set DATA_ROOT (see config.py) to point at a canonical copy.
+# See F-23 in potential-fixes.md.
+data/
+dataset/
+
+# Run artefacts
+runs/
+wandb/
+mlruns/
+*.npy
+evol_*.png
+
+# OS
+.DS_Store
+Thumbs.db
