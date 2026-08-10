@@ -1,229 +1,227 @@
-import torch.utils.data as data
-from torchvision.transforms import transforms
-import torchvision.transforms.functional as TF
-import glob
-import numpy as np
-import os
-from PIL import Image
-import torch
+"""Paired image/mask dataset for binary rooftop segmentation.
+
+Rewritten to fix, in order of severity (see potential-fixes.md):
+
+* **F-04** — images and masks were globbed independently and paired by list
+  position. ``glob.glob`` is unsorted and OS-dependent, so one missing file
+  silently misaligned every subsequent pair with no error. Masks are now derived
+  from the image filename and their existence is verified at construction.
+* **F-07** — training cropped to 248x248 while val/test stayed at 250x250, and
+  neither divides by 16 (the U-Net's downsample factor). Training now crops to
+  a configurable multiple of 32; evaluation keeps the native size and the model
+  boundary pads (see utils.pad_to_multiple).
+* **F-13** — the mask was opened without ``.convert()``, so a palette-mode PNG
+  would yield palette *indices* from channel 0.
+* **F-14** — masks went through bilinear-capable rotation. Augmentation is now
+  the exact 8-element dihedral (D4) group via lossless PIL transposes, sampled
+  uniformly rather than as three independent coin flips.
+* **F-20** — ``change_hsv`` (a per-pixel Python double loop), ``flip``,
+  ``add_noise``, ``add_uniform_noise``, ``add_gaussian_noise``,
+  ``ceil_floor_image`` and ``normalization2`` were dead code, and the two noise
+  helpers returned unclamped float64 because they clamped the wrong array.
+  All removed.
+"""
+
+from __future__ import annotations
+
 import random
-import cv2
+from pathlib import Path
+
+import numpy as np
+import torch
+import torch.utils.data as data
+import torchvision.transforms.functional as TF
+from PIL import Image
+from torchvision.transforms import transforms
+
+from config import TRAIN_CROP, norm_stats
+
+__all__ = ["DataLoaderSegmentation", "D4_OPS"]
+
+
+# The eight elements of the dihedral group D4, expressed as lossless PIL
+# transposes. Every one is an exact pixel permutation: no interpolation, so a
+# mask survives unchanged (F-14).
+D4_OPS: tuple[tuple[int, ...], ...] = (
+    (),                                                        # identity
+    (Image.ROTATE_90,),
+    (Image.ROTATE_180,),
+    (Image.ROTATE_270,),
+    (Image.FLIP_LEFT_RIGHT,),
+    (Image.FLIP_TOP_BOTTOM,),
+    (Image.TRANSPOSE,),                                        # main diagonal
+    (Image.TRANSVERSE,),                                       # anti-diagonal
+)
+
+
+def _apply_d4(img: Image.Image, ops: tuple[int, ...]) -> Image.Image:
+    for op in ops:
+        img = img.transpose(op)
+    return img
 
 
 class DataLoaderSegmentation(data.Dataset):
-    """Class for all three data loaders (train, test, val)
+    """Aerial image + binary mask pairs.
+
+    Args:
+        folder_path_img: directory of RGB ``.png`` tiles.
+        folder_path_mask: directory of binary mask ``.png`` tiles. ``None`` for
+            unlabelled inference sets, in which case an all-zero mask is
+            returned so the batch shape stays uniform.
+        augment: apply D4 + photometric augmentation and random cropping.
+            Set False for val/test.
+        crop: side length of the random crop applied when ``augment`` is True.
+            Must be a multiple of 32 (see F-07). ``None`` disables cropping.
+        stats_key: which normalisation constants to use, from ``config.NORM_STATS``.
+        mask_suffix: filename suffix that turns an image stem into its mask stem.
+            The Swiss DOP25 set uses ``"_label"``; pass ``""`` for datasets whose
+            masks share the image filename.
+        strict: raise if any mask is missing. Leave True — a dataset that cannot
+            verify its own pairing should not be allowed to start training.
     """
-    
-    def __init__(self, folder_path_img,folder_path_mask=None,augment=True):
-        """
-        Args:
-            image_path (str): the path where the image is located
-            mask_path (str): the path where the mask is located
-            option (str): decide which dataset to import
-        """
-        self.img_files = glob.glob(os.path.join(folder_path_img,'*.png'))
-        if folder_path_mask == None:
-            self.mask_files = 0
-        else:
-            self.mask_files =glob.glob(os.path.join(folder_path_mask,'*.png'))
+
+    def __init__(
+        self,
+        folder_path_img: str | Path,
+        folder_path_mask: str | Path | None = None,
+        augment: bool = True,
+        crop: int | None = TRAIN_CROP,
+        stats_key: str = "all",
+        mask_suffix: str = "_label",
+        strict: bool = True,
+    ):
+        self.image_dir = Path(folder_path_img)
+        if not self.image_dir.is_dir():
+            raise FileNotFoundError(f"image directory not found: {self.image_dir}")
+
+        # sorted(), not glob order — deterministic across filesystems (F-04).
+        self.img_files: list[Path] = sorted(self.image_dir.glob("*.png"))
+        if not self.img_files:
+            raise FileNotFoundError(f"no .png files in {self.image_dir}")
+
+        self.has_masks = folder_path_mask is not None
+        self.mask_files: list[Path] | None = None
+
+        if self.has_masks:
+            mask_dir = Path(folder_path_mask)
+            if not mask_dir.is_dir():
+                raise FileNotFoundError(f"mask directory not found: {mask_dir}")
+            self.mask_files = [self._mask_for(p, mask_dir, mask_suffix) for p in self.img_files]
+
+            missing = [
+                img for img, m in zip(self.img_files, self.mask_files) if m is None
+            ]
+            if missing and strict:
+                raise FileNotFoundError(
+                    f"{len(missing)} of {len(self.img_files)} images have no matching mask in "
+                    f"{mask_dir} (tried '<stem>{mask_suffix}.png' and '<stem>.png'). "
+                    f"First few: {[p.name for p in missing[:3]]}"
+                )
+            if missing:  # non-strict: drop the unpaired images rather than misalign
+                keep = [i for i, m in enumerate(self.mask_files) if m is not None]
+                self.img_files = [self.img_files[i] for i in keep]
+                self.mask_files = [self.mask_files[i] for i in keep]
+
         self.augment = augment
+        self.crop = crop
+        if crop is not None and crop % 32 != 0:
+            raise ValueError(f"crop must be a multiple of 32 (got {crop}) — see F-07")
 
-    def augmentor(self,image,mask):
-        if np.random.random() > 0.5:
-            image = TF.hflip(image)
-            mask = TF.hflip(mask)
-    
-        if np.random.random() > 0.5:
-            image = TF.vflip(image)
-            mask = TF.vflip(mask)
-        
-        if np.random.random() > 0.5:
-            image = TF.rotate(image,90)
-            mask = TF.rotate(mask,90)
-        
-        if random.random() > 0:
-            i, j, h, w = transforms.RandomCrop.get_params(image, output_size=(248, 248))
-            image = TF.crop(image, i, j, h, w)
-            mask = TF.crop(mask, i, j, h, w)
+        self.stats_key = stats_key
+        self.mean, self.std = norm_stats(stats_key)
 
-        if random.random() > 0:
-            sigma = np.random.uniform(0,0.05)
-            image = TF.gaussian_blur(image, 3, sigma=sigma)
+    # ------------------------------------------------------------------ #
+    @staticmethod
+    def _mask_for(img_path: Path, mask_dir: Path, suffix: str) -> Path | None:
+        """Derive the mask path from the image path. Never positional (F-04)."""
+        for candidate in (
+            mask_dir / f"{img_path.stem}{suffix}.png",
+            mask_dir / f"{img_path.stem}.png",
+        ):
+            if candidate.exists():
+                return candidate
+        return None
 
-            
+    # ------------------------------------------------------------------ #
+    def augmentor(self, image: Image.Image, mask: Image.Image):
+        """Geometric + photometric augmentation.
+
+        Geometry is applied identically to image and mask; photometric changes
+        touch the image only.
+        """
+        # Uniform over all 8 dihedral transforms. The old code used three
+        # independent coin flips, which reaches the same 8 states but with
+        # non-uniform probability (F-14).
+        ops = random.choice(D4_OPS)
+        image = _apply_d4(image, ops)
+        mask = _apply_d4(mask, ops)
+
+        if self.crop is not None:
+            w, h = image.size
+            if min(w, h) < self.crop:
+                raise ValueError(
+                    f"crop={self.crop} exceeds image size {w}x{h} for this dataset"
+                )
+            i, j, ch, cw = transforms.RandomCrop.get_params(
+                image, output_size=(self.crop, self.crop)
+            )
+            image = TF.crop(image, i, j, ch, cw)
+            mask = TF.crop(mask, i, j, ch, cw)
+
+        # Photometric — real probability gates. The originals read
+        # `if random.random() > 0:`, which is always True (F-07).
+        if random.random() < 0.5:
+            image = TF.adjust_brightness(image, float(np.random.normal(1.0, 0.1)))
+        if random.random() < 0.3:
+            image = TF.adjust_contrast(image, float(np.random.uniform(0.85, 1.15)))
+        if random.random() < 0.2:
+            image = TF.gaussian_blur(image, 3, sigma=float(np.random.uniform(0.01, 0.6)))
 
         return image, mask
 
-    def transform(self, image, mask):
-        # AUGMENTATION
+    def transform(self, image: Image.Image, mask: Image.Image):
+        """PIL -> normalised CHW float tensor, and PIL -> {0,1} HW float tensor.
 
+        This is the *only* place normalisation happens for training data;
+        ``infer.preprocess`` mirrors it exactly for inference, and
+        ``tests/test_preprocess_parity.py`` asserts the two agree (F-01).
+        """
+        x = TF.to_tensor(image)  # (3, H, W) in [0, 1]
+        x = TF.normalize(x, mean=self.mean, std=self.std)
 
-        if random.random() > 0:
-            bright = np.random.normal(1,0.1)
-            image = TF.adjust_brightness(image,bright)
-        
-    
-        image = TF.to_tensor(image)
-        #image = TF.normalize(image,mean=[0.3268, 0.5080, 0.3735],std=[0.2853, 0.2395, 0.2063]) # For Residential
-        image = TF.normalize(image,mean=[0.4066, 0.4768, 0.4383],std=[0.2121, 0.1899, 0.1618]) # For All
-        #image = TF.normalize(image,mean=[0.3877, 0.5270, 0.4675],std=[0.2972, 0.2621, 0.2189]) # For Industrial
-        
-        mask = TF.to_tensor(mask)
-        mask = mask[0]
-        mask = mask > 0
-        mask = mask.float()
-                
-        return image, mask
+        y = torch.from_numpy(np.array(mask, dtype=np.uint8))  # (H, W), already 'L'
+        y = (y > 127).float()
+        return x, y
 
-    def __getitem__(self, index,show_og=False):
-        """Get specific data corresponding to the index applying randomly dat augmentation
-        Args:
-            index (int): index of the data
-        Returns:
-            Tensor: specific data on index which is converted to Tensor
-        """
-        
-        """
-        # GET IMAGE
-        """
-        image = Image.open(self.img_files[index]).convert('RGB')
-        if self.mask_files != 0:
-            mask = Image.open(self.mask_files[index])
+    # ------------------------------------------------------------------ #
+    def __getitem__(self, index: int, show_og: bool = False):
+        image = Image.open(self.img_files[index]).convert("RGB")
+
+        if self.has_masks:
+            # F-13: force greyscale so palette / RGBA PNGs cannot leak palette
+            # indices or an alpha channel into channel 0.
+            mask = Image.open(self.mask_files[index]).convert("L")
+            if mask.size != image.size:
+                raise ValueError(
+                    f"size mismatch for {self.img_files[index].name}: "
+                    f"image {image.size} vs mask {mask.size}"
+                )
         else:
-            mask_shape = image.size
-            mask = Image.new('RGB', mask_shape)        
-        
+            mask = Image.new("L", image.size, 0)
+
         if self.augment:
-            image, mask = self.augmentor(image,mask)
+            image, mask = self.augmentor(image, mask)
 
-        z = image
+        original = image
         x, y = self.transform(image, mask)
+        return (x, y, original) if show_og else (x, y)
 
-        if show_og:
-            return x, y, z
-        else:
-            return x,y
-
-    
-
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.img_files)
 
-
-
-def change_hsv(image, sat, bright):
-    """
-    Args:
-        image : numpy array of image
-        sat: saturation
-        bright : brightness
-    Return :
-        image : numpy array of image with saturation and brightness added
-    """
-    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-    h, s, v = cv2.split(hsv)
-    for i in range(s.shape[0]):
-        for j in range(s.shape[1]):
-            s[i,j]=min(s[i,j]+sat,255)
-            v[i,j]=min(v[i,j]+bright,255)
-    final_hsv = cv2.merge((h, s, v))
-    image = cv2.cvtColor(final_hsv, cv2.COLOR_HSV2BGR)
-    return image
-    
-    
-    
-    
-    
-    
-def flip(image, option_value):
-    """
-    Args:
-        image : numpy array of image
-        option_value = random integer between 0 to 3
-    Return :
-        image : numpy array of flipped image
-    """
-    
-
-    if option_value == 0:
-        # vertical
-        image = np.flip(image, option_value)
-    elif option_value == 1:
-        # horizontal
-        image = np.flip(image, option_value)
-    elif option_value == 2:
-        # horizontally and vertically flip
-        image = np.flip(image, 0)
-        image = np.flip(image, 1)
-    else:
-        # no effect
-        image = image     
-    return image
-
-
-def normalization2(image, max, min):
-    """Normalization to range of [min, max]
-    Args :
-        image : numpy array of image
-        mean :
-    Return :
-        image : numpy array of image with values turned into standard scores
-    """
-    image_new = (image - np.min(image))*(max - min)/(np.max(image)-np.min(image)) + min
-    return image_new
-
-def add_noise(image, option_value, param):
-    if option_value==0:
-        # Gaussian_noise
-        gaus_sd, gaus_mean = random.randint(0, param), 0
-        image = add_gaussian_noise(image, gaus_mean, gaus_sd)
-    elif option_value==1:
-        # uniform_noise
-        l_bound, u_bound = random.randint(-param, 0), random.randint(0, param)
-        image = add_uniform_noise(image, l_bound, u_bound)
-    else:
-        # no noise
-        image = image
-    return image       
-
-def add_uniform_noise(image, low=-10, high=10):
-    """
-    Args:
-        image : numpy array of image
-        low : lower boundary of output interval
-        high : upper boundary of output interval
-    Return :
-        image : numpy array of image with uniform noise added
-    """
-    uni_noise = np.random.uniform(low, high, image.shape)
-    image = image.astype("int16")
-    noise_img = image + uni_noise
-    image = ceil_floor_image(image) 
-    return noise_img
-
-def add_gaussian_noise(image, mean=0, std=1):
-    """
-    Args:
-        image : numpy array of image
-        mean : pixel mean of image
-        standard deviation : pixel standard deviation of image
-    Return :
-        image : numpy array of image with gaussian noise added
-    """
-    gaus_noise = np.random.normal(mean, std, image.shape)
-    image = image.astype("int16")
-    noise_img = image + gaus_noise
-    image = ceil_floor_image(image)
-    return noise_img
-
-def ceil_floor_image(image):
-    """
-    Args:
-        image : numpy array of image in datatype int16
-    Return :
-        image : numpy array of image in datatype uint8 with ceilling(maximum 255) and flooring(minimum 0)
-    """
-    image[image > 255] = 255
-    image[image < 0] = 0
-    image = image.astype("uint8")
-    return image
+    def __repr__(self) -> str:
+        return (
+            f"DataLoaderSegmentation(n={len(self)}, dir='{self.image_dir}', "
+            f"masks={self.has_masks}, augment={self.augment}, crop={self.crop}, "
+            f"stats='{self.stats_key}')"
+        )
