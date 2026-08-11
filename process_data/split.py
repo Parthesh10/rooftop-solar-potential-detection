@@ -63,11 +63,19 @@ def block_split(
     test_ratio: float = 0.1,
     block_size: float = 1000.0,
     seed: int = 0,
+    buffer: float = 0.0,
 ) -> dict[str, list[Path]]:
     """Assign whole ``block_size``-metre blocks to train / val / test.
 
     Blocks, not files, are shuffled — so a tile and its neighbours always land
     in the same split. Ratios are approximate because blocks are indivisible.
+
+    ``buffer`` (metres) additionally **drops training tiles within that distance
+    of any val/test tile.** Blocking alone is not sufficient: a tile at the edge
+    of a training block can still be one 62.5 m step from a tile at the edge of a
+    test block, which is precisely the adjacency F-05 is about. A buffer of two
+    tile-steps (125 m) removes it entirely. Val and test are never trimmed, so
+    the evaluation sets stay at full size and only training data is sacrificed.
 
     Raises if any filename lacks parseable coordinates; a silent fallback to
     random splitting would reintroduce exactly the leak this exists to prevent.
@@ -114,6 +122,21 @@ def block_split(
         f"[split] {len(files)} tiles in {len(keys)} blocks of {block_size:.0f} m -> "
         f"train {len(out['train'])} / val {len(out['val'])} / test {len(out['test'])}"
     )
+
+    if buffer > 0:
+        held = np.array([parse_lv03(f) for f in out["val"] + out["test"]], dtype=float)
+        if len(held):
+            train_xy = np.array([parse_lv03(f) for f in out["train"]], dtype=float)
+            # Chebyshev distance: tiles sit on a regular grid, so max-axis
+            # distance is the natural "how many tile-steps away" measure.
+            d = np.abs(train_xy[:, None, :] - held[None, :, :]).max(axis=2).min(axis=1)
+            keep = d > buffer
+            dropped = int((~keep).sum())
+            out["train"] = [f for f, k in zip(out["train"], keep) if k]
+            print(
+                f"[split] buffer {buffer:.0f} m dropped {dropped} training tiles too "
+                f"close to val/test -> train {len(out['train'])}"
+            )
     return out
 
 
@@ -210,6 +233,8 @@ def main() -> None:
     ap.add_argument("--inria", action="store_true", help="use Inria's official 1-5 protocol")
     ap.add_argument("--holdout-city", default=None, help="hold out one Inria city entirely")
     ap.add_argument("--block-size", type=float, default=1000.0, help="metres, Swiss data")
+    ap.add_argument("--buffer", type=float, default=125.0,
+                    help="metres; drop training tiles this close to val/test (0 disables)")
     ap.add_argument("--val-ratio", type=float, default=0.1)
     ap.add_argument("--test-ratio", type=float, default=0.1)
     ap.add_argument("--seed", type=int, default=0)
@@ -218,13 +243,42 @@ def main() -> None:
     args = ap.parse_args()
 
     root = Path(args.root)
-    image_dir = root / args.images if (root / args.images).is_dir() else root
+    exts = {".png", ".tif", ".tiff"}
+
+    if (root / args.images).is_dir():
+        image_dir = root / args.images
+        candidates = list(image_dir.iterdir())
+    elif list(root.glob(f"*/{args.images}")):
+        # Pooled mode: data/{train,val,test}/images/*.png. A geographic re-split
+        # has to see every tile at once, not one pre-existing split at a time.
+        image_dir = root
+        candidates = list(root.glob(f"*/{args.images}/*"))
+        print(f"[split] pooling tiles from {root}/*/{args.images}")
+    else:
+        image_dir = root
+        candidates = list(root.iterdir())
+
     files = sorted(
-        p for p in image_dir.iterdir()
-        if p.suffix.lower() in {".png", ".tif", ".tiff"} and "_label" not in p.stem
+        p for p in candidates
+        if p.is_file() and p.suffix.lower() in exts and "_label" not in p.stem
     )
     if not files:
-        raise SystemExit(f"no images found in {image_dir}")
+        raise SystemExit(f"no images found under {root}")
+
+    # Deduplicate by filename. data/residencial/ is a *subset* of the same
+    # imagery already present in data/{train,val,test}/, so pooling naively puts
+    # byte-identical tiles into different splits — the very leak this module
+    # exists to prevent, in its most literal form.
+    seen: dict[str, Path] = {}
+    dupes = 0
+    for p in files:
+        if p.name in seen:
+            dupes += 1
+            continue
+        seen[p.name] = p
+    if dupes:
+        print(f"[split] dropped {dupes} duplicate filenames (kept {len(seen)} unique tiles)")
+    files = sorted(seen.values())
 
     if args.holdout_city:
         split = city_holdout_split(files, args.holdout_city)
@@ -233,7 +287,7 @@ def main() -> None:
     else:
         split = block_split(
             files, val_ratio=args.val_ratio, test_ratio=args.test_ratio,
-            block_size=args.block_size, seed=args.seed,
+            block_size=args.block_size, seed=args.seed, buffer=args.buffer,
         )
 
     if args.dry_run:
@@ -242,7 +296,7 @@ def main() -> None:
         return
 
     if args.out:
-        write_manifests(split, Path(args.out), image_dir)
+        write_manifests(split, Path(args.out), root)
     if args.materialize:
         label_dir = root / args.labels if (root / args.labels).is_dir() else None
         materialize(split, Path(args.materialize), image_dir, label_dir)

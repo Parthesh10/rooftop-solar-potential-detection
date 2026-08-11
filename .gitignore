@@ -31,3 +31,6 @@ evol_*.png
 # OS
 .DS_Store
 Thumbs.db
+
+# split manifests are generated, not authored
+data/splits/

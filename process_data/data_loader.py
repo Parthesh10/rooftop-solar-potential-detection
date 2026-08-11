@@ -82,39 +82,65 @@ class DataLoaderSegmentation(data.Dataset):
 
     def __init__(
         self,
-        folder_path_img: str | Path,
+        folder_path_img: str | Path | None = None,
         folder_path_mask: str | Path | None = None,
         augment: bool = True,
         crop: int | None = TRAIN_CROP,
         stats_key: str = "all",
         mask_suffix: str = "_label",
         strict: bool = True,
+        img_files: list[Path] | None = None,
     ):
-        self.image_dir = Path(folder_path_img)
-        if not self.image_dir.is_dir():
-            raise FileNotFoundError(f"image directory not found: {self.image_dir}")
+        # Two construction modes:
+        #   * a directory pair (the original, for data/<split>/{images,labels})
+        #   * an explicit file list (for a geographic split that pools tiles from
+        #     several directories — see from_files / F-05). The file-list mode
+        #     resolves each mask next to its own image, so a re-split costs no
+        #     disk at all instead of duplicating 170 MB.
+        if img_files is not None:
+            self.image_dir = None
+            self.img_files = [Path(p) for p in img_files]
+            if not self.img_files:
+                raise ValueError("img_files is empty")
+            self.has_masks = folder_path_mask is not None or strict
+            mask_dirs = [
+                Path(folder_path_mask) if folder_path_mask is not None
+                else p.parent.parent / "labels"
+                for p in self.img_files
+            ]
+        else:
+            if folder_path_img is None:
+                raise ValueError("pass either folder_path_img or img_files")
+            self.image_dir = Path(folder_path_img)
+            if not self.image_dir.is_dir():
+                raise FileNotFoundError(f"image directory not found: {self.image_dir}")
 
-        # sorted(), not glob order — deterministic across filesystems (F-04).
-        self.img_files: list[Path] = sorted(self.image_dir.glob("*.png"))
-        if not self.img_files:
-            raise FileNotFoundError(f"no .png files in {self.image_dir}")
+            # sorted(), not glob order — deterministic across filesystems (F-04).
+            self.img_files = sorted(self.image_dir.glob("*.png"))
+            if not self.img_files:
+                raise FileNotFoundError(f"no .png files in {self.image_dir}")
 
-        self.has_masks = folder_path_mask is not None
+            self.has_masks = folder_path_mask is not None
+            if self.has_masks:
+                mask_dir = Path(folder_path_mask)
+                if not mask_dir.is_dir():
+                    raise FileNotFoundError(f"mask directory not found: {mask_dir}")
+                mask_dirs = [mask_dir] * len(self.img_files)
+
         self.mask_files: list[Path] | None = None
 
         if self.has_masks:
-            mask_dir = Path(folder_path_mask)
-            if not mask_dir.is_dir():
-                raise FileNotFoundError(f"mask directory not found: {mask_dir}")
-            self.mask_files = [self._mask_for(p, mask_dir, mask_suffix) for p in self.img_files]
+            self.mask_files = [
+                self._mask_for(p, d, mask_suffix) for p, d in zip(self.img_files, mask_dirs)
+            ]
 
             missing = [
                 img for img, m in zip(self.img_files, self.mask_files) if m is None
             ]
             if missing and strict:
                 raise FileNotFoundError(
-                    f"{len(missing)} of {len(self.img_files)} images have no matching mask in "
-                    f"{mask_dir} (tried '<stem>{mask_suffix}.png' and '<stem>.png'). "
+                    f"{len(missing)} of {len(self.img_files)} images have no matching mask "
+                    f"(tried '<stem>{mask_suffix}.png' and '<stem>.png'). "
                     f"First few: {[p.name for p in missing[:3]]}"
                 )
             if missing:  # non-strict: drop the unpaired images rather than misalign
@@ -131,6 +157,23 @@ class DataLoaderSegmentation(data.Dataset):
         self.mean, self.std = norm_stats(stats_key)
 
     # ------------------------------------------------------------------ #
+    @classmethod
+    def from_files(cls, img_files, **kwargs) -> "DataLoaderSegmentation":
+        """Build a dataset from an explicit list of image paths.
+
+        Each mask is resolved next to its own image (``<parent>/../labels/``),
+        so tiles pooled from several split directories work without moving or
+        copying anything. This is how a geographic re-split (F-05) is consumed.
+        """
+        return cls(img_files=list(img_files), **kwargs)
+
+    @classmethod
+    def from_manifest(cls, manifest_path: str | Path, root: str | Path, **kwargs):
+        """Build a dataset from a ``split.py`` manifest of root-relative paths."""
+        root = Path(root)
+        lines = Path(manifest_path).read_text(encoding="utf-8").split("\n")
+        return cls.from_files([root / ln.strip() for ln in lines if ln.strip()], **kwargs)
+
     @staticmethod
     def _mask_for(img_path: Path, mask_dir: Path, suffix: str) -> Path | None:
         """Derive the mask path from the image path. Never positional (F-04)."""
@@ -220,8 +263,9 @@ class DataLoaderSegmentation(data.Dataset):
         return len(self.img_files)
 
     def __repr__(self) -> str:
+        src = f"dir='{self.image_dir}'" if self.image_dir else "source=file-list"
         return (
-            f"DataLoaderSegmentation(n={len(self)}, dir='{self.image_dir}', "
+            f"DataLoaderSegmentation(n={len(self)}, {src}, "
             f"masks={self.has_masks}, augment={self.augment}, crop={self.crop}, "
             f"stats='{self.stats_key}')"
         )
