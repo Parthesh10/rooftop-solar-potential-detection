@@ -51,6 +51,72 @@ def seed_torch(seed: int = 0, deterministic: bool = True) -> None:
     torch.backends.cudnn.deterministic = deterministic
 
 
+def select_amp(model, device, requested: str | bool = "auto", probe_shape=(2, 3, 224, 224)):
+    """Choose a safe autocast dtype, verifying it on the real model.
+
+    Returns ``(enabled, dtype)`` where dtype is None when AMP is off.
+
+    Why this exists — measured on a GTX 1650 (sm_75, cuDNN 9.10.2), batch 8 @ 224:
+
+        fp32   497 ms/step   3.32 GB   correct
+        bf16  1299 ms/step   1.48 GB   correct but 2.6x SLOWER (emulated)
+        fp16  1851 ms/step   3.15 GB   **NaN on every step**
+
+    The fp16 failure is a bad cuDNN kernel for 64->64 convolutions on this
+    architecture; the whole forward pass comes back NaN from the first block.
+    ``torch.cuda.is_bf16_supported()`` also returns True here even though the
+    hardware has no native bf16, so neither the dtype flags nor the compute
+    capability can be trusted on their own.
+
+    So: on pre-Ampere cards AMP is off by default (it buys nothing when there
+    are no tensor cores), and whatever is selected is **probed for NaN against
+    the actual model** before training starts. Silent NaN is far more expensive
+    than a startup check.
+    """
+    if device is None or torch.device(device).type != "cuda":
+        return False, None
+
+    if requested in (False, "off", "none"):
+        return False, None
+
+    major = torch.cuda.get_device_properties(torch.device(device).index or 0).major
+
+    if requested in (True, "auto"):
+        if major < 8:
+            print(
+                f"[amp] compute {major}.x has no tensor cores — AMP disabled "
+                f"(fp32 is both faster and safer here). Force with amp='bf16'."
+            )
+            return False, None
+        candidates = [torch.bfloat16, torch.float16]
+    else:
+        candidates = {
+            "fp16": [torch.float16], "float16": [torch.float16],
+            "bf16": [torch.bfloat16], "bfloat16": [torch.bfloat16],
+        }.get(str(requested), [torch.float16])
+
+    x = torch.randn(*probe_shape, device=device)
+    was_training = model.training
+    model.eval()
+    try:
+        for dt in candidates:
+            try:
+                with torch.no_grad(), torch.autocast("cuda", dtype=dt):
+                    out = model(x)
+                if torch.isnan(out).any() or torch.isinf(out).any():
+                    print(f"[amp] {dt} produced NaN/Inf on this GPU — rejecting it")
+                    continue
+                return True, dt
+            except Exception as exc:
+                print(f"[amp] {dt} unusable ({exc}) — rejecting it")
+    finally:
+        if was_training:
+            model.train()
+
+    print("[amp] no usable autocast dtype — running in fp32")
+    return False, None
+
+
 def count_parameters(model: torch.nn.Module, trainable_only: bool = True) -> int:
     ps = model.parameters()
     if trainable_only:

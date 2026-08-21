@@ -1,4 +1,4 @@
-"""Train the U-Net on the Swiss DOP25 set using the leakage-free geographic split.
+r"""Train the U-Net on the Swiss DOP25 set using the leakage-free geographic split.
 
 Prerequisite — generate the split manifests once:
 
@@ -10,15 +10,26 @@ Then:
     python scripts/train_swiss.py --batch-size 4 --epochs 40
     python scripts/train_swiss.py --wandb
 
-Notes for small GPUs (this was written against a GTX 1650, 4 GB):
+Pause / stop / resume (see runs/<ts>/CONTROL.md):
 
-* AMP uses **float16**, not bfloat16. bf16 needs compute capability 8.0
-  (Ampere); Turing is 7.5, so bf16 silently falls back or errors. ``torch.amp``
-  defaults to fp16 on CUDA, which is what we want, and ``GradScaler`` handles
-  the loss scaling.
-* The GTX 16-series has no tensor cores, so AMP buys memory headroom more than
-  speed. Expect maybe 1.2-1.4x, not 2-3x.
-* ``--batch-size`` auto-halves on CUDA OOM rather than dying.
+    New-Item runs\<ts>\PAUSE -ItemType File     # pause at the next step
+    Remove-Item runs\<ts>\PAUSE                 # resume
+    New-Item runs\<ts>\STOP  -ItemType File     # graceful stop (or Ctrl+C once)
+    python scripts/train_swiss.py --resume      # continue the newest run
+
+Notes for small GPUs — **measured** on a GTX 1650 4 GB (sm_75, cuDNN 9.10.2),
+batch 8 @ 224, not assumed:
+
+    fp32   497 ms/step   3.32 GB   correct
+    bf16  1299 ms/step   1.48 GB   correct, but 2.6x SLOWER (emulated)
+    fp16  1851 ms/step   3.15 GB   NaN on every step
+
+fp16 comes back NaN because of a bad cuDNN kernel for 64->64 convolutions on
+this architecture — the whole forward pass is NaN from the first block, and
+neither cudnn.benchmark nor cudnn.deterministic changes it. So AMP is *not* a
+free win on pre-Ampere cards: ``--amp auto`` (the default) turns it off there
+and NaN-probes whatever dtype it does pick. ``--batch-size`` auto-halves on
+CUDA OOM rather than dying.
 """
 
 from __future__ import annotations
@@ -82,22 +93,53 @@ def main() -> None:
     ap.add_argument("--splits", default="data/splits")
     ap.add_argument("--data-root", default="data")
     ap.add_argument("--epochs", type=int, default=80)
-    ap.add_argument("--batch-size", type=int, default=8)
+    ap.add_argument("--batch-size", type=int, default=4)
     ap.add_argument("--lr", type=float, default=3e-4)
     ap.add_argument("--crop", type=int, default=224)
     ap.add_argument("--workers", type=int, default=2)
-    ap.add_argument("--no-amp", action="store_true")
+    ap.add_argument("--amp", default="auto", choices=["auto", "fp16", "bf16", "off"],
+                    help="mixed precision. 'auto' disables it on pre-Ampere GPUs "
+                         "and NaN-probes whatever it picks (default: auto)")
+    ap.add_argument("--no-amp", action="store_true", help="alias for --amp off")
     ap.add_argument("--wandb", action="store_true")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--patience", type=int, default=15)
+    ap.add_argument("--resume", nargs="?", const="auto", default=None,
+                    metavar="RUN",
+                    help="resume: bare flag = newest run with a state.pt, "
+                         "or pass a run directory name")
+    ap.add_argument("--gpu-mem-fraction", type=float, default=0.9,
+                    help="cap this process at a fraction of total VRAM (0 = off)")
+    ap.add_argument("--gpu-util-target", type=float, default=80.0,
+                    help="duty-cycle to roughly this average GPU utilisation "
+                         "(100 = no throttling)")
+    ap.add_argument("--gpu-temp-limit", type=float, default=78.0,
+                    help="pause training above this GPU temperature in C (0 = off)")
+    ap.add_argument("--checkpoint-every", type=float, default=60.0,
+                    help="also save a resumable state this often mid-epoch, seconds")
+    ap.add_argument("--no-progress", action="store_true",
+                    help="disable the live progress bar (for piping to a log file)")
     args = ap.parse_args()
 
     cfg = TrainConfig(
         epochs=args.epochs, batch_size=args.batch_size, lr=args.lr, crop=args.crop,
-        num_workers=args.workers, amp=not args.no_amp, seed=args.seed,
+        num_workers=args.workers, amp=("off" if args.no_amp else args.amp),
+        seed=args.seed,
         early_stop_patience=args.patience, wandb=args.wandb,
         wandb_project="rooftop-solar", stats_key="all",
+        gpu_mem_fraction=args.gpu_mem_fraction or None,
+        gpu_util_target=(args.gpu_util_target if args.gpu_util_target < 100 else None),
+        gpu_temp_limit=args.gpu_temp_limit or None,
+        checkpoint_every_seconds=args.checkpoint_every,
     )
+
+    if args.resume is None:
+        from runstate import find_latest_run
+        from config import RUNS_ROOT
+        latest = find_latest_run(RUNS_ROOT)
+        if latest is not None:
+            print(f"note:   '{latest.name}' is resumable. Pass --resume to continue "
+                  f"it instead of starting a new run.")
 
     device = get_device()
     seed_torch(cfg.seed, deterministic=False)  # benchmark mode: ~20-30% faster
@@ -107,8 +149,10 @@ def main() -> None:
         props = torch.cuda.get_device_properties(0)
         print(f"gpu:    {props.name}  {props.total_memory / 1024**3:.1f} GB  "
               f"sm_{props.major}{props.minor}")
-        if props.major < 8 and cfg.amp:
-            print("note:   compute < 8.0 -> AMP uses fp16 (no bf16, no tensor cores)")
+        if props.major < 8:
+            print("note:   compute < 8.0 — no tensor cores. Measured on a GTX 1650: "
+                  "fp32 497 ms/step, bf16 1299 ms (correct but emulated), "
+                  "fp16 1851 ms and NaN. AMP='auto' therefore picks fp32 here.")
 
     print("datasets:")
     batch_size = args.batch_size
@@ -127,6 +171,7 @@ def main() -> None:
                 loaders["train"], loss_fn, optimizer, model,
                 num_epochs=cfg.epochs, scheduler=scheduler, val_loader=loaders["val"],
                 cfg=cfg, device=device, threshold=cfg.threshold,
+                resume=args.resume, progress=not args.no_progress,
             )
             break
         except torch.cuda.OutOfMemoryError:

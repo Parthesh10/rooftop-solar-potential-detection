@@ -23,7 +23,42 @@
       "trained_on": "swiss-dop25-all",
       "epochs": 15,
       "metrics_reported_2023": null,
-      "metrics_verified": null
+      "metrics_verified": {
+        "harness": "evaluate.py, model.eval() on (F-03), no empty-tile inversion (F-08)",
+        "measured": "2026-08-11",
+        "splits": "original random split (leaky, F-05)",
+        "train": {
+          "iou": 0.3714,
+          "f1": 0.5023,
+          "accuracy": 0.8703,
+          "recall": 0.5123,
+          "precision": 0.6195,
+          "iou_undefined": 0,
+          "n_images": 420,
+          "positive_pixel_rate": 0.1602
+        },
+        "val": {
+          "iou": 0.3351,
+          "f1": 0.4683,
+          "accuracy": 0.8358,
+          "recall": 0.4745,
+          "precision": 0.6125,
+          "iou_undefined": 0,
+          "n_images": 52,
+          "positive_pixel_rate": 0.1709
+        },
+        "test": {
+          "iou": 0.3266,
+          "f1": 0.4509,
+          "accuracy": 0.8614,
+          "recall": 0.446,
+          "precision": 0.6041,
+          "iou_undefined": 0,
+          "n_images": 53,
+          "positive_pixel_rate": 0.1773
+        }
+      },
+      "sha256": "cea72ce5e6227d95d20a4d28513385545759ee95d673b4ea889b9f261a07bd29"
     },
     "path raise 100.pt": {
       "arch": "unet",
@@ -35,7 +70,42 @@
       "trained_on": "swiss-dop25-all",
       "epochs": 100,
       "metrics_reported_2023": null,
-      "metrics_verified": null
+      "metrics_verified": {
+        "harness": "evaluate.py, model.eval() on (F-03), no empty-tile inversion (F-08)",
+        "measured": "2026-08-11",
+        "splits": "original random split (leaky, F-05)",
+        "train": {
+          "iou": 0.5175,
+          "f1": 0.6469,
+          "accuracy": 0.9195,
+          "recall": 0.5535,
+          "precision": 0.8925,
+          "iou_undefined": 0,
+          "n_images": 420,
+          "positive_pixel_rate": 0.1602
+        },
+        "val": {
+          "iou": 0.4785,
+          "f1": 0.6151,
+          "accuracy": 0.9027,
+          "recall": 0.5252,
+          "precision": 0.8787,
+          "iou_undefined": 0,
+          "n_images": 52,
+          "positive_pixel_rate": 0.1709
+        },
+        "test": {
+          "iou": 0.4302,
+          "f1": 0.5532,
+          "accuracy": 0.9,
+          "recall": 0.4614,
+          "precision": 0.8283,
+          "iou_undefined": 0,
+          "n_images": 53,
+          "positive_pixel_rate": 0.1773
+        }
+      },
+      "sha256": "2e728b2aa4cad373dc3077f93f88d8ad770c88580047f2ac53abb16d3d878a8e"
     },
     "path raise 130.pt": {
       "arch": "unet",
@@ -48,11 +118,61 @@
       "epochs": 130,
       "metrics_reported_2023": {
         "note": "Measured with BatchNorm in TRAIN mode (F-03) and with the empty-tile IoU inversion (F-08). Not a valid measurement.",
-        "test": { "iou": 0.5566, "accuracy": 0.9033, "recall": 0.6952, "precision": 0.7268 },
-        "val": { "iou": 0.6105, "accuracy": 0.9196, "recall": 0.7733, "precision": 0.7693 },
-        "train": { "iou": 0.7524, "accuracy": 0.9582, "recall": 0.8629, "precision": 0.8535 }
+        "test": {
+          "iou": 0.5566,
+          "accuracy": 0.9033,
+          "recall": 0.6952,
+          "precision": 0.7268
+        },
+        "val": {
+          "iou": 0.6105,
+          "accuracy": 0.9196,
+          "recall": 0.7733,
+          "precision": 0.7693
+        },
+        "train": {
+          "iou": 0.7524,
+          "accuracy": 0.9582,
+          "recall": 0.8629,
+          "precision": 0.8535
+        }
       },
-      "metrics_verified": null
+      "metrics_verified": {
+        "harness": "evaluate.py, model.eval() on (F-03), no empty-tile inversion (F-08)",
+        "measured": "2026-08-11",
+        "splits": "original random split (leaky, F-05)",
+        "train": {
+          "iou": 0.6309,
+          "f1": 0.7471,
+          "accuracy": 0.9318,
+          "recall": 0.7008,
+          "precision": 0.8711,
+          "iou_undefined": 0,
+          "n_images": 420,
+          "positive_pixel_rate": 0.1602
+        },
+        "val": {
+          "iou": 0.5469,
+          "f1": 0.6815,
+          "accuracy": 0.9091,
+          "recall": 0.6433,
+          "precision": 0.812,
+          "iou_undefined": 0,
+          "n_images": 52,
+          "positive_pixel_rate": 0.1709
+        },
+        "test": {
+          "iou": 0.517,
+          "f1": 0.631,
+          "accuracy": 0.9036,
+          "recall": 0.5805,
+          "precision": 0.7745,
+          "iou_undefined": 0,
+          "n_images": 53,
+          "positive_pixel_rate": 0.1773
+        }
+      },
+      "sha256": "83ca2a763f87347bbde43d0833450e4821cb91473045c47bdf9a64f0f5441356"
     },
     "path raise 230.pt": {
       "arch": "unet",
@@ -64,7 +184,42 @@
       "trained_on": "swiss-dop25-all",
       "epochs": 230,
       "metrics_reported_2023": null,
-      "metrics_verified": null
+      "metrics_verified": {
+        "harness": "evaluate.py, model.eval() on (F-03), no empty-tile inversion (F-08)",
+        "measured": "2026-08-11",
+        "splits": "original random split (leaky, F-05)",
+        "train": {
+          "iou": 0.5081,
+          "f1": 0.6353,
+          "accuracy": 0.918,
+          "recall": 0.5261,
+          "precision": 0.9362,
+          "iou_undefined": 0,
+          "n_images": 420,
+          "positive_pixel_rate": 0.1602
+        },
+        "val": {
+          "iou": 0.4457,
+          "f1": 0.5838,
+          "accuracy": 0.8991,
+          "recall": 0.4618,
+          "precision": 0.9392,
+          "iou_undefined": 0,
+          "n_images": 52,
+          "positive_pixel_rate": 0.1709
+        },
+        "test": {
+          "iou": 0.3904,
+          "f1": 0.5153,
+          "accuracy": 0.8874,
+          "recall": 0.4045,
+          "precision": 0.8568,
+          "iou_undefined": 0,
+          "n_images": 53,
+          "positive_pixel_rate": 0.1773
+        }
+      },
+      "sha256": "714475110c316b16e2865a8c618de59fbc5b9a63d036d7db8e224fff1f4a55c0"
     }
   }
 }

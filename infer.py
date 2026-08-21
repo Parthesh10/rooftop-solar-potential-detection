@@ -124,7 +124,12 @@ def preprocess(
     if mean is None or std is None:
         mean, std = norm_stats(stats_key)
 
-    x = torch.from_numpy(np.ascontiguousarray(arr))  # (H, W, 3) uint8
+    arr = np.ascontiguousarray(arr)
+    if not arr.flags.writeable:
+        # PIL/tifffile can hand back read-only buffers; torch.from_numpy on one
+        # warns and yields a tensor whose in-place ops are undefined behaviour.
+        arr = arr.copy()
+    x = torch.from_numpy(arr)                        # (H, W, 3) uint8
     x = x.permute(2, 0, 1).float().div_(255.0)       # (3, H, W) in [0, 1]
     x = TF.normalize(x, mean=mean, std=std)
     return x.unsqueeze(0)                             # (1, 3, H, W)

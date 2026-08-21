@@ -96,7 +96,7 @@ class TrainConfig:
     val_dir: str = "val"
     test_dir: str = "test"
     crop: int = TRAIN_CROP
-    batch_size: int = 8
+    batch_size: int = 4
     num_workers: int = 0  # >0 needs `if __name__ == "__main__"` guarding on Windows
 
     # optimisation — F-09: was Adam @ lr=0.01 with a gamma=1 (no-op) scheduler.
@@ -116,9 +116,23 @@ class TrainConfig:
     threshold: float = 0.5
 
     seed: int = 0
-    amp: bool = True
+    # "auto" | "fp16" | "bf16" | False. "auto" disables AMP on pre-Ampere GPUs
+    # and probes the chosen dtype for NaN against the real model before
+    # training — see utils.select_amp.
+    amp: bool | str = "auto"
 
-    # tracking — F-24. Requires `uv pip install wandb` and `wandb login`.
+    # GPU safety limits — added after a hard machine crash during training on
+    # 2026-08-11. See sysmon.GpuGovernor for what each one actually controls.
+    gpu_mem_fraction: float | None = 0.9   # cap this process's VRAM share
+    gpu_util_target: float | None = 80.0   # duty-cycle to this average utilisation
+    gpu_temp_limit: float | None = 78.0    # pause above this, resume 6C lower
+
+    # Crash resilience: also write a resumable state mid-epoch, this often.
+    # Per-epoch alone loses everything if the machine dies inside epoch 0 —
+    # which is what happened. 0 disables mid-epoch saves.
+    checkpoint_every_seconds: float = 60.0
+
+    # tracking — F-24. Requires `pip install wandb` and `wandb login`.
     # Degrades to a no-op if either is missing; runs/<ts>/history.json is
     # written either way, so nothing depends on the network.
     wandb: bool = False

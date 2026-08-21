@@ -54,11 +54,17 @@ def evaluate(
     threshold: float = 0.5,
     tta: bool = False,
     per_tile: bool = False,
+    loss_fn=None,
+    progress: bool = False,
 ) -> dict:
     """Score a model over a loader.
 
     Returns a dict of nan-aware means plus ``<metric>_undefined`` counts, so
     empty tiles are reported rather than silently scored as perfect (F-08).
+
+    Pass ``loss_fn`` to also accumulate the validation loss in the *same* pass —
+    the training loop needs both, and on a small GPU a second sweep over the
+    validation set is pure waste.
     """
     from infer import predict_probs  # local import: avoids a cycle at module load
 
@@ -71,12 +77,31 @@ def evaluate(
     n_images = 0
     n_positive_pixels = 0
     n_pixels = 0
+    loss_total, loss_batches = 0.0, 0
+
+    iterator = loader
+    if progress:
+        try:
+            from tqdm.auto import tqdm
+
+            iterator = tqdm(loader, desc="val", leave=False, unit="b", dynamic_ncols=True)
+        except ImportError:
+            pass
 
     try:
-        for images, labels in loader:  # F-16: no index shadowing
+        for images, labels in iterator:  # F-16: no index shadowing
             images = images.to(device, non_blocking=True)
 
             probs = predict_probs(model, images, device=device, tta=tta)
+
+            if loss_fn is not None:
+                # logit = log(p / (1-p)); recovering it avoids a second forward
+                # pass just to feed a *WithLogits loss.
+                p = probs.clamp(1e-6, 1 - 1e-6)
+                logits = torch.log(p / (1 - p)).squeeze(1)
+                loss_total += float(loss_fn(logits, labels.to(device)).item())
+                loss_batches += 1
+
             preds = (probs.squeeze(1) > threshold).cpu().numpy()
             gts = labels.numpy() > 0.5
 
@@ -96,6 +121,8 @@ def evaluate(
     out["positive_pixel_rate"] = (n_positive_pixels / n_pixels) if n_pixels else float("nan")
     out["threshold"] = threshold
     out["tta"] = tta
+    if loss_fn is not None:
+        out["loss"] = loss_total / max(loss_batches, 1)
     if per_tile:
         out["_per_tile"] = scores
     return out

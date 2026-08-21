@@ -8,30 +8,43 @@
 #   pip install -r requirements.txt
 #
 # torch is NOT listed below on purpose — the PyPI Windows wheel is CPU-only, so
-# it must come from the pytorch index above or you get no CUDA.
+# it must come from the pytorch index above or you silently get no CUDA.
 #
-# Version notes (verified on this machine, 2026-08-11):
-#   * Python 3.13 is what is installed here. torch 2.5.x has no cp313 wheels;
-#     2.6.0+ does. cu126 carries the widest range (2.6.0 -> 2.13.0).
-#   * A cu126 build runs fine on a newer driver (this box reports CUDA 13.1) —
-#     the CUDA runtime is forward-compatible with the driver.
+# Verified working on this machine, 2026-08-11:
+#   Windows 11 / Python 3.13.7 / GTX 1650 4 GB (sm_75) / driver 592.82
+#   torch 2.8.0+cu126, torch.cuda.is_available() == True, 55/55 tests passing
+#
+# Version notes:
+#   * torch 2.5.x has no cp313 wheels; 2.6.0+ does. cu126 carries the widest
+#     range (2.6.0 -> 2.13.0).
+#   * A cu126 build runs fine against a newer driver (this box reports CUDA
+#     13.1) — the CUDA runtime is forward-compatible with the driver.
+#   * bf16 is NOT native on sm_75. Use fp16 + GradScaler, which is what
+#     torch.amp.autocast('cuda') defaults to. torch.cuda.is_bf16_supported()
+#     returns True here via emulation — do not take that as a green light.
 #   * For CPU-only, swap the index URL for .../whl/cpu
 # See F-22 in potential-fixes.md.
 
-numpy
+numpy==2.4.4
 scipy
-pillow
-opencv-python
-matplotlib
-scikit-learn
-tqdm
+pillow==12.2.0
+opencv-python==5.0.0.93
+matplotlib==3.11.1
+scikit-learn==1.9.0
+tqdm==4.70.0
 
-# Optional — richer augmentation (the dataloader falls back to torchvision
-# transforms if this is absent, so it is not required to train).
-# albumentations==1.4.21
+# live terminal metrics during training (sysmon.py degrades gracefully without them)
+psutil==7.2.2
+nvidia-ml-py==13.610.43
 
-# Optional — metric cross-checks in tests/
-# torchmetrics==1.6.0
+# memory-mapped windowed reads over the 5000x5000 Inria GeoTIFFs
+tifffile==2026.7.31
+
+# Optional — richer augmentation; the dataloader falls back to torchvision.
+# albumentations
+
+# Optional — experiment tracking. tracking.py is a no-op without it.
+# wandb
 
 # Dev
-pytest==8.3.4
+pytest==9.1.1
