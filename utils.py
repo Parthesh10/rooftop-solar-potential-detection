@@ -68,10 +68,12 @@ def select_amp(model, device, requested: str | bool = "auto", probe_shape=(2, 3,
     hardware has no native bf16, so neither the dtype flags nor the compute
     capability can be trusted on their own.
 
-    So: on pre-Ampere cards AMP is off by default (it buys nothing when there
-    are no tensor cores), and whatever is selected is **probed for NaN against
-    the actual model** before training starts. Silent NaN is far more expensive
-    than a startup check.
+    Policy: Ampere+ tries bf16 then fp16; Volta/Turing cards that *have* tensor
+    cores (V100, T4) try fp16; cards without them (GTX 10xx/16xx, MX) skip AMP
+    entirely, because fp16 buys nothing there and emulated bf16 is slower than
+    fp32. Whatever is selected is then **probed for NaN against the actual
+    model** before training starts, and a failed probe falls back to fp32 — never
+    to emulated bf16. Silent NaN is far more expensive than a startup check.
     """
     if device is None or torch.device(device).type != "cuda":
         return False, None
@@ -82,13 +84,24 @@ def select_amp(model, device, requested: str | bool = "auto", probe_shape=(2, 3,
     major = torch.cuda.get_device_properties(torch.device(device).index or 0).major
 
     if requested in (True, "auto"):
-        if major < 8:
+        # Policy by architecture. Compute capability alone is not enough: a
+        # Kaggle T4 and a GTX 1650 are both sm_75, but the T4 has tensor cores
+        # and the 1650 does not, so fp16 is a large win on one and a broken
+        # slowdown on the other. Probe, then decide.
+        name = torch.cuda.get_device_name(torch.device(device).index or 0)
+        no_tensor_cores = any(k in name for k in ("GTX 16", "GTX 10", "MX"))
+        if major >= 8:
+            candidates = [torch.bfloat16, torch.float16]      # Ampere+
+        elif major == 7 and not no_tensor_cores:
+            candidates = [torch.float16]                      # V100 / T4
+        else:
+            # No tensor cores: fp16 buys nothing even when it works, and
+            # emulated bf16 measured 2.6x SLOWER than fp32 on a GTX 1650.
             print(
-                f"[amp] compute {major}.x has no tensor cores — AMP disabled "
-                f"(fp32 is both faster and safer here). Force with amp='bf16'."
+                f"[amp] {name} has no tensor cores — AMP disabled "
+                f"(fp32 is both faster and safer here). Force with amp='fp16'."
             )
             return False, None
-        candidates = [torch.bfloat16, torch.float16]
     else:
         candidates = {
             "fp16": [torch.float16], "float16": [torch.float16],
@@ -113,7 +126,7 @@ def select_amp(model, device, requested: str | bool = "auto", probe_shape=(2, 3,
         if was_training:
             model.train()
 
-    print("[amp] no usable autocast dtype — running in fp32")
+    print("[amp] no usable autocast dtype passed the NaN probe — running in fp32")
     return False, None
 
 
