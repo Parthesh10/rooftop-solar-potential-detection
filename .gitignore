@@ -34,3 +34,8 @@ Thumbs.db
 
 # split manifests are generated, not authored
 data/splits/
+
+# Kaggle download scratch (re-fetchable via kernels output)
+kaggle_out/
+kaggle_logs/
+kaggle_check/
