@@ -1,0 +1,113 @@
+[{"stream_name":"stderr","time":6.083549213,"data":"0.00s - Debugger warning: It seems that frozen modules are being used, which may\n"}
+,{"stream_name":"stderr","time":6.083609974,"data":"0.00s - make the debugger miss breakpoints. Please pass -Xfrozen_modules=off\n"}
+,{"stream_name":"stderr","time":6.083614198,"data":"0.00s - to python to disable frozen modules.\n"}
+,{"stream_name":"stderr","time":6.083616695,"data":"0.00s - Note: Debugging will proceed. Set PYDEVD_DISABLE_FILE_VALIDATION=1 to disable this validation.\n"}
+,{"stream_name":"stderr","time":6.6505598379999995,"data":"0.00s - Debugger warning: It seems that frozen modules are being used, which may\n"}
+,{"stream_name":"stderr","time":6.650604366,"data":"0.00s - make the debugger miss breakpoints. Please pass -Xfrozen_modules=off\n"}
+,{"stream_name":"stderr","time":6.650610635,"data":"0.00s - to python to disable frozen modules.\n"}
+,{"stream_name":"stderr","time":6.65061485,"data":"0.00s - Note: Debugging will proceed. Set PYDEVD_DISABLE_FILE_VALIDATION=1 to disable this validation.\n"}
+,{"stream_name":"stdout","time":7.900559096,"data":"GPU: Tesla P100-PCIE-16GB\n"}
+,{"stream_name":"stdout","time":13.740357237,"data":"probe: on on the device\n"}
+,{"stream_name":"stdout","time":13.740400537,"data":"Search for `cudaErrorNoKernelImageForDevice' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\n"}
+,{"stream_name":"stdout","time":13.74040554,"data":"CUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.\n"}
+,{"stream_name":"stdout","time":13.740409127,"data":"For debugging consider passing CUDA_LAUNCH_BLOCKING=1\n"}
+,{"stream_name":"stdout","time":13.740412317,"data":"Compile with `TORCH_USE_CUDA_DSA` to enable device-side assertions.\n"}
+,{"stream_name":"stdout","time":13.74041562,"data":"this torch cannot drive this GPU - installing a cu118 build\n"}
+,{"stream_name":"stdout","time":142.285633311,"data":"stalling collected packages: triton, nvidia-nvtx-cu11, nvidia-nccl-cu11, nvidia-cusparse-cu11, nvidia-curand-cu11, nvidia-cufft-cu11, nvidia-cuda-runtime-cu11, nvidia-cuda-nvrtc-cu11, nvidia-cuda-cupti-cu11, nvidia-cublas-cu11, nvidia-cusolver-cu11, nvidia-cudnn-cu11, torch, torchvision\n"}
+,{"stream_name":"stdout","time":142.285685266,"data":"  Attempting uninstall: triton\n"}
+,{"stream_name":"stdout","time":142.285692416,"data":"    Found existing installation: triton 3.6.0\n"}
+,{"stream_name":"stdout","time":142.285697413,"data":"    Uninstalling triton-3.6.0:\n"}
+,{"stream_name":"stdout","time":142.28570232,"data":"      Successfully uninstalled triton-3.6.0\n"}
+,{"stream_name":"stdout","time":142.285706868,"data":"  Attempting uninstall: torch\n"}
+,{"stream_name":"stdout","time":142.285711359,"data":"    Found existing installation: torch 2.10.0+cu128\n"}
+,{"stream_name":"stdout","time":142.285720665,"data":"    Uninstalling torch-2.10.0+cu128:\n"}
+,{"stream_name":"stdout","time":142.28572399,"data":"      Successfully uninstalled torch-2.10.0+cu128\n"}
+,{"stream_name":"stdout","time":142.285727118,"data":"  Attempting uninstall: torchvision\n"}
+,{"stream_name":"stdout","time":142.285730156,"data":"    Found existing installation: torchvision 0.25.0+cu128\n"}
+,{"stream_name":"stdout","time":142.285733314,"data":"    Uninstalling torchvision-0.25.0+cu128:\n"}
+,{"stream_name":"stdout","time":142.285736457,"data":"      Successfully uninstalled torchvision-0.25.0+cu128\n"}
+,{"stream_name":"stdout","time":142.285739595,"data":"Successfully installed nvidia-cublas-cu11-11.11.3.6 nvidia-cuda-cupti-cu11-11.8.87 nvidia-cuda-nvrtc-cu11-11.8.89 nvidia-cuda-runtime-cu11-11.8.89 nvidia-cudnn-cu11-9.1.0.70 nvidia-cufft-cu11-10.9.0.58 nvidia-curand-cu11-10.3.0.86 nvidia-cusolver-cu11-11.4.1.48 nvidia-cusparse-cu11-11.7.5.86 nvidia-nccl-cu11-2.20.5 nvidia-nvtx-cu11-11.8.86 torch-2.4.1+cu118 torchvision-0.19.1+cu118 triton-3.0.0\n"}
+,{"stream_name":"stdout","time":142.285752477,"data":"\n"}
+,{"stream_name":"stdout","time":144.514078043,"data":"probe after reinstall: 2.4.1+cu118 sm_60 True True\n"}
+,{"stream_name":"stdout","time":144.514119685,"data":"GPU verified by real matmul in a fresh interpreter\n"}
+,{"stream_name":"stderr","time":144.549316599,"data":"Cloning into '/kaggle/working/repo'...\n"}
+,{"stream_name":"stderr","time":144.751668421,"data":"Cloning into '/kaggle/working/repo'...\n"}
+,{"stream_name":"stderr","time":144.751704454,"data":"\n"}
+,{"stream_name":"stderr","time":144.751710413,"data":"Cloning into '/kaggle/working/repo'...\n"}
+,{"stream_name":"stdout","time":147.732796453,"data":"cloned at 8e076ba\n"}
+,{"stream_name":"stdout","time":147.732842496,"data":"train images: 420\n"}
+,{"stream_name":"stdout","time":151.124789156,"data":"[split] pooling tiles from data/*/images\n"}
+,{"stream_name":"stdout","time":151.124821708,"data":"[split] dropped 256 duplicate filenames (kept 574 unique tiles)\n"}
+,{"stream_name":"stdout","time":151.124827656,"data":"[split] 574 tiles in 42 blocks of 1000 m -\u003e train 442 / val 58 / test 74\n"}
+,{"stream_name":"stdout","time":151.124833372,"data":"[split] buffer 125 m dropped 22 training tiles too close to val/test -\u003e train 420\n"}
+,{"stream_name":"stdout","time":151.124838163,"data":"[split] wrote data/splits/train.txt (420 entries)\n"}
+,{"stream_name":"stdout","time":151.124842986,"data":"[split] wrote data/splits/val.txt (58 entries)\n"}
+,{"stream_name":"stdout","time":151.124848539,"data":"[split] wrote data/splits/test.txt (74 entries)\n"}
+,{"stream_name":"stdout","time":151.124853512,"data":"\n"}
+,{"stream_name":"stdout","time":151.153095398,"data":"/usr/bin/python3 -u scripts/train_swiss.py --epochs 80 --batch-size 16 --lr 3e-4 --workers 2 --patience 15 --amp auto --gpu-util-target 100 --gpu-temp-limit 0 --gpu-mem-fraction 0.95 --checkpoint-every 120 --no-progress\n"}
+,{"stream_name":"stdout","time":156.669751294,"data":"device: cuda\n"}
+,{"stream_name":"stdout","time":156.688183005,"data":"gpu:    Tesla P100-PCIE-16GB  15.9 GB  sm_60\n"}
+,{"stream_name":"stdout","time":156.688987837,"data":"note:   compute \u003c 8.0 — no tensor cores. Measured on a GTX 1650: fp32 497 ms/step, bf16 1299 ms (correct but emulated), fp16 1851 ms and NaN. AMP='auto' therefore picks fp32 here.\n"}
+,{"stream_name":"stdout","time":156.689673397,"data":"datasets:\n"}
+,{"stream_name":"stdout","time":156.700094568,"data":"  train  DataLoaderSegmentation(n=420, source=file-list, masks=True, augment=True, crop=224, stats='all')\n"}
+,{"stream_name":"stdout","time":156.702331849,"data":"  val    DataLoaderSegmentation(n=58, source=file-list, masks=True, augment=False, crop=None, stats='all')\n"}
+,{"stream_name":"stdout","time":156.710747547,"data":"  test   DataLoaderSegmentation(n=74, source=file-list, masks=True, augment=False, crop=None, stats='all')\n"}
+,{"stream_name":"stdout","time":156.944250766,"data":"model:  UNet, 14,788,929 trainable parameters\n"}
+,{"stream_name":"stdout","time":158.503919282,"data":"[loss] estimated pos_weight = 5.825 from the training set\n"}
+,{"stream_name":"stdout","time":158.506363656,"data":"[amp] compute 6.x has no tensor cores — AMP disabled (fp32 is both faster and safer here). Force with amp='bf16'.\n"}
+,{"stream_name":"stdout","time":158.520590174,"data":"[gpu] VRAM cap 95% of 15.9 GB = 15.09 GB for this process\n"}
+,{"stream_name":"stdout","time":158.521631126,"data":"[train] run dir: /kaggle/working/runs/20260822_095916\n"}
+,{"stream_name":"stdout","time":158.522380656,"data":"[train] pause: create /kaggle/working/runs/20260822_095916/PAUSE   stop: create /kaggle/working/runs/20260822_095916/STOP (or Ctrl+C once)\n"}
+,{"stream_name":"stdout","time":185.212575077,"data":"ep   0/79  loss 0.8828  iou 0.2338  lr 1.20e-04  23s  |  val_loss 0.8840  val_iou 0.2249  *best*  peak 9.2G\n"}
+,{"stream_name":"stdout","time":193.821790868,"data":"ep   1/79  loss 0.7537  iou 0.3068  lr 1.80e-04  7s  |  val_loss 0.6892  val_iou 0.3052  *best*  peak 6.5G\n"}
+,{"stream_name":"stdout","time":202.663401966,"data":"ep   2/79  loss 0.6949  iou 0.3437  lr 2.40e-04  7s  |  val_loss 0.6231  val_iou 0.3635  *best*  peak 6.5G\n"}
+,{"stream_name":"stdout","time":211.477573884,"data":"ep   3/79  loss 0.6694  iou 0.3604  lr 3.00e-04  7s  |  val_loss 0.6793  val_iou 0.3035  peak 6.5G\n"}
+,{"stream_name":"stdout","time":219.991797606,"data":"ep   4/79  loss 0.6377  iou 0.3811  lr 3.00e-04  7s  |  val_loss 0.7562  val_iou 0.2582  peak 6.5G\n"}
+,{"stream_name":"stdout","time":228.60067481,"data":"ep   5/79  loss 0.5961  iou 0.4194  lr 3.00e-04  7s  |  val_loss 0.6718  val_iou 0.3201  peak 6.5G\n"}
+,{"stream_name":"stdout","time":237.262163911,"data":"ep   6/79  loss 0.5943  iou 0.4197  lr 2.99e-04  7s  |  val_loss 0.5771  val_iou 0.3849  *best*  peak 6.5G\n"}
+,{"stream_name":"stdout","time":246.032586032,"data":"ep   7/79  loss 0.5594  iou 0.4545  lr 2.99e-04  7s  |  val_loss 0.6977  val_iou 0.2655  peak 6.5G\n"}
+,{"stream_name":"stdout","time":254.673921128,"data":"ep   8/79  loss 0.5690  iou 0.4456  lr 2.98e-04  7s  |  val_loss 0.5757  val_iou 0.3889  *best*  peak 6.5G\n"}
+,{"stream_name":"stdout","time":263.58225758,"data":"ep   9/79  loss 0.5524  iou 0.4556  lr 2.97e-04  7s  |  val_loss 0.6628  val_iou 0.4298  *best*  peak 6.5G\n"}
+,{"stream_name":"stdout","time":272.480836986,"data":"ep  10/79  loss 0.5318  iou 0.4716  lr 2.95e-04  7s  |  val_loss 0.5760  val_iou 0.4635  *best*  peak 6.5G\n"}
+,{"stream_name":"stdout","time":281.372533557,"data":"ep  11/79  loss 0.5207  iou 0.4668  lr 2.94e-04  7s  |  val_loss 0.5911  val_iou 0.4995  *best*  peak 6.5G\n"}
+,{"stream_name":"stdout","time":290.262081787,"data":"ep  12/79  loss 0.5121  iou 0.4885  lr 2.92e-04  7s  |  val_loss 0.5371  val_iou 0.5466  *best*  peak 6.5G\n"}
+,{"stream_name":"stdout","time":299.005073894,"data":"ep  13/79  loss 0.4789  iou 0.5201  lr 2.89e-04  7s  |  val_loss 0.6212  val_iou 0.4635  peak 6.5G\n"}
+,{"stream_name":"stdout","time":307.533849913,"data":"ep  14/79  loss 0.4744  iou 0.5138  lr 2.87e-04  7s  |  val_loss 0.5748  val_iou 0.4072  peak 6.5G\n"}
+,{"stream_name":"stdout","time":316.071242907,"data":"ep  15/79  loss 0.4642  iou 0.5376  lr 2.84e-04  7s  |  val_loss 0.6209  val_iou 0.4767  peak 6.5G\n"}
+,{"stream_name":"stdout","time":324.653056977,"data":"ep  16/79  loss 0.4570  iou 0.5378  lr 2.81e-04  7s  |  val_loss 0.5616  val_iou 0.3825  peak 6.5G\n"}
+,{"stream_name":"stdout","time":333.219706692,"data":"ep  17/79  loss 0.4504  iou 0.5447  lr 2.78e-04  7s  |  val_loss 0.5363  val_iou 0.4424  peak 6.5G\n"}
+,{"stream_name":"stdout","time":341.819498917,"data":"ep  18/79  loss 0.4530  iou 0.5447  lr 2.75e-04  7s  |  val_loss 0.6369  val_iou 0.4648  peak 6.5G\n"}
+,{"stream_name":"stdout","time":350.367545829,"data":"ep  19/79  loss 0.4427  iou 0.5464  lr 2.71e-04  7s  |  val_loss 0.6263  val_iou 0.4928  peak 6.5G\n"}
+,{"stream_name":"stdout","time":358.923305892,"data":"ep  20/79  loss 0.4433  iou 0.5467  lr 2.68e-04  7s  |  val_loss 0.5794  val_iou 0.4795  peak 6.5G\n"}
+,{"stream_name":"stdout","time":367.501623196,"data":"ep  21/79  loss 0.4463  iou 0.5461  lr 2.64e-04  7s  |  val_loss 0.5821  val_iou 0.4346  peak 6.5G\n"}
+,{"stream_name":"stdout","time":376.075423206,"data":"ep  22/79  loss 0.4558  iou 0.5427  lr 2.59e-04  7s  |  val_loss 0.5669  val_iou 0.4328  peak 6.5G\n"}
+,{"stream_name":"stdout","time":384.63563669,"data":"ep  23/79  loss 0.4497  iou 0.5268  lr 2.55e-04  7s  |  val_loss 0.5862  val_iou 0.4483  peak 6.5G\n"}
+,{"stream_name":"stdout","time":393.247697905,"data":"ep  24/79  loss 0.4663  iou 0.5618  lr 2.50e-04  7s  |  val_loss 0.5822  val_iou 0.5398  peak 6.5G\n"}
+,{"stream_name":"stdout","time":401.819279474,"data":"ep  25/79  loss 0.4851  iou 0.5089  lr 2.46e-04  7s  |  val_loss 0.5670  val_iou 0.3750  peak 6.5G\n"}
+,{"stream_name":"stdout","time":410.38729617,"data":"ep  26/79  loss 0.4115  iou 0.5798  lr 2.41e-04  7s  |  val_loss 0.5779  val_iou 0.5396  peak 6.5G\n"}
+,{"stream_name":"stdout","time":418.951817322,"data":"ep  27/79  loss 0.3982  iou 0.5939  lr 2.36e-04  7s  |  val_loss 0.5984  val_iou 0.5170  peak 6.5G\n"}
+,{"stream_name":"stdout","time":419.930476298,"data":"[train] early stop at epoch 27: no val IoU improvement in 15 epochs (best 0.5466 @ epoch 12)\n"}
+,{"stream_name":"stdout","time":420.004056259,"data":"[train] artefacts written to /kaggle/working/runs/20260822_095916  (early stop)\n"}
+,{"stream_name":"stdout","time":420.089599381,"data":"\n"}
+,{"stream_name":"stdout","time":420.090362525,"data":"loaded best checkpoint (epoch 12)\n"}
+,{"stream_name":"stdout","time":420.091285131,"data":"\n"}
+,{"stream_name":"stdout","time":420.092261475,"data":"=== final metrics (geographic split, correct eval harness) ===\n"}
+,{"stream_name":"stdout","time":422.549558729,"data":"  train  IoU 0.5413  F1 0.6655  acc 0.9181  P 0.6765  R 0.7455  (n=420, undefined=18)\n"}
+,{"stream_name":"stdout","time":423.281903706,"data":"  val    IoU 0.5466  F1 0.6700  acc 0.9278  P 0.6796  R 0.7511  (n=58, undefined=7)\n"}
+,{"stream_name":"stdout","time":424.179346393,"data":"  test   IoU 0.4656  F1 0.5736  acc 0.8911  P 0.6404  R 0.6701  (n=74, undefined=5)\n"}
+,{"stream_name":"stdout","time":424.180246551,"data":"\n"}
+,{"stream_name":"stdout","time":424.180954342,"data":"artefacts: /kaggle/working/runs/20260822_095916\n"}
+,{"stream_name":"stdout","time":424.963750863,"data":"\n"}
+,{"stream_name":"stdout","time":424.963788324,"data":"exit=0  elapsed=4.6 min\n"}
+,{"stream_name":"stdout","time":425.164535131,"data":"run: 20260822_095916\n"}
+,{"stream_name":"stdout","time":425.164567868,"data":"best val IoU 0.5466 @ epoch 12 over 28 epochs\n"}
+,{"stream_name":"stdout","time":425.199472545,"data":"artifacts: ['__notebook__.ipynb', 'best.pt', 'history.json', 'metadata.json', 'train.log']\n"}
+,{"stream_name":"stderr","time":428.047936134,"data":"/usr/local/lib/python3.12/dist-packages/mistune.py:435: SyntaxWarning: invalid escape sequence '\\|'\n"}
+,{"stream_name":"stderr","time":428.047981403,"data":"  cells[i][c] = re.sub('\\\\\\\\\\|', '|', cell)\n"}
+,{"stream_name":"stderr","time":428.207025356,"data":"/usr/local/lib/python3.12/dist-packages/nbconvert/filters/filter_links.py:36: SyntaxWarning: invalid escape sequence '\\_'\n"}
+,{"stream_name":"stderr","time":428.207053614,"data":"  text = re.sub(r'_', '\\_', text) # Escape underscores in display text\n"}
+,{"stream_name":"stderr","time":428.791430111,"data":"[NbConvertApp] Converting notebook __notebook__.ipynb to notebook\n"}
+,{"stream_name":"stderr","time":429.09189437,"data":"[NbConvertApp] Writing 24019 bytes to __notebook__.ipynb\n"}
+,{"stream_name":"stderr","time":431.440912529,"data":"[NbConvertApp] Converting notebook __notebook__.ipynb to html\n"}
+,{"stream_name":"stderr","time":432.259322224,"data":"[NbConvertApp] Writing 318495 bytes to __results__.html\n"}
+]
