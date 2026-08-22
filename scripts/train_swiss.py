@@ -35,6 +35,7 @@ CUDA OOM rather than dying.
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -104,6 +105,13 @@ def main() -> None:
     ap.add_argument("--wandb", action="store_true")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--patience", type=int, default=15)
+    ap.add_argument("--pos-weight", type=float, default=None,
+                    help="BCE pos_weight (F-02). Default None = estimate the "
+                         "negative/positive pixel ratio from the training set "
+                         "(~5.9 here, which over-predicts and costs precision)")
+    ap.add_argument("--dice-weight", type=float, default=0.5,
+                    help="weight of the Dice term in the combo loss")
+    ap.add_argument("--run-name", default=None, help="label for this run dir")
     ap.add_argument("--resume", nargs="?", const="auto", default=None,
                     metavar="RUN",
                     help="resume: bare flag = newest run with a state.pt, "
@@ -126,6 +134,7 @@ def main() -> None:
         num_workers=args.workers, amp=("off" if args.no_amp else args.amp),
         seed=args.seed,
         early_stop_patience=args.patience, wandb=args.wandb,
+        pos_weight=args.pos_weight, dice_weight=args.dice_weight,
         wandb_project="rooftop-solar", stats_key="all",
         gpu_mem_fraction=args.gpu_mem_fraction or None,
         gpu_util_target=(args.gpu_util_target if args.gpu_util_target < 100 else None),
@@ -140,6 +149,8 @@ def main() -> None:
         if latest is not None:
             print(f"note:   '{latest.name}' is resumable. Pass --resume to continue "
                   f"it instead of starting a new run.")
+
+    from config import RUNS_ROOT as RUNS_ROOT_DIR
 
     device = get_device()
     seed_torch(cfg.seed, deterministic=False)  # benchmark mode: ~20-30% faster
@@ -172,6 +183,7 @@ def main() -> None:
                 num_epochs=cfg.epochs, scheduler=scheduler, val_loader=loaders["val"],
                 cfg=cfg, device=device, threshold=cfg.threshold,
                 resume=args.resume, progress=not args.no_progress,
+                run_dir=(RUNS_ROOT_DIR / args.run_name) if args.run_name else None,
             )
             break
         except torch.cuda.OutOfMemoryError:
@@ -197,12 +209,28 @@ def main() -> None:
         print(f"\nloaded best checkpoint (epoch {history.best_epoch})")
 
     print("\n=== final metrics (geographic split, correct eval harness) ===")
+    final = {}
     for name in ("train", "val", "test"):
         res = evaluate(loaders[name], model, device=device, threshold=cfg.threshold)
+        final[name] = res
         print(f"  {name:<6} IoU {res['iou']:.4f}  F1 {res['f1']:.4f}  "
               f"acc {res['accuracy']:.4f}  P {res['precision']:.4f}  "
               f"R {res['recall']:.4f}  (n={res['n_images']}, "
               f"undefined={res['iou_undefined']})")
+    summary = {
+        "run": Path(history.run_dir).name,
+        "best_val_iou": history.best_val_iou,
+        "best_epoch": history.best_epoch,
+        "epochs_run": len(history.epochs),
+        "config": {"pos_weight": cfg.pos_weight, "dice_weight": cfg.dice_weight,
+                   "lr": cfg.lr, "batch_size": cfg.batch_size,
+                   "epochs": cfg.epochs, "patience": cfg.early_stop_patience},
+        "metrics": {k: {m: float(v[m]) for m in
+                        ("iou", "f1", "accuracy", "precision", "recall")}
+                    for k, v in final.items()},
+    }
+    (Path(history.run_dir) / "summary.json").write_text(
+        json.dumps(summary, indent=2), encoding="utf-8")
     print(f"\nartefacts: {history.run_dir}")
 
 

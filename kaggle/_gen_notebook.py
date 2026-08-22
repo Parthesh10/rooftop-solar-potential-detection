@@ -115,56 +115,90 @@ CELL_TRAIN = """RUNS = WORK / "runs"
 RUNS.mkdir(exist_ok=True)
 os.environ["RUNS_ROOT"] = str(RUNS)
 
-# A T4 has 16 GB but tensor cores; a P100 has 16 GB and none. Both fit a
-# larger batch than the 4 GB local card.
-BATCH = 16   # both T4 and P100 have 16 GB; 4x the local 4 GB card
+# Sweep. The first Kaggle run early-stopped at epoch 27 with its best at 12,
+# so the cosine schedule never annealed and precision fell to 0.64 (from the
+# 2023 model's 0.78) while recall rose - the auto-estimated pos_weight of ~5.9
+# over-predicts. patience is raised to 40 so the schedule completes, and
+# pos_weight is swept against the auto value.
+SWEEP = [
+    ("A_auto_pw",   [],                                  "patience 40, pos_weight auto (~5.9)"),
+    ("B_pw2.4",     ["--pos-weight", "2.4"],             "sqrt of the imbalance"),
+    ("C_pw1.0",     ["--pos-weight", "1.0"],             "no class weighting"),
+    ("D_pw2.4_d0.7",["--pos-weight", "2.4", "--dice-weight", "0.7"], "more Dice"),
+]
 
-cmd = [sys.executable, "-u", "scripts/train_swiss.py",
-       "--epochs", "80", "--batch-size", str(BATCH), "--lr", "3e-4",
-       "--workers", "2", "--patience", "15", "--amp", "auto",
-       "--gpu-util-target", "100",
-       "--gpu-temp-limit", "0",
-       "--gpu-mem-fraction", "0.95",
-       "--checkpoint-every", "120",
-       "--no-progress"]
-print(" ".join(cmd), flush=True)
+BASE = [sys.executable, "-u", "scripts/train_swiss.py",
+        "--epochs", "80", "--batch-size", "16", "--lr", "3e-4",
+        "--workers", "2", "--patience", "40", "--amp", "auto",
+        "--gpu-util-target", "100", "--gpu-temp-limit", "0",
+        "--gpu-mem-fraction", "0.95", "--checkpoint-every", "120",
+        "--no-progress"]
 
-t0 = time.time()
-proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                        text=True, bufsize=1)
-for line in proc.stdout:
-    print(line, end="", flush=True)
-proc.wait()
+t_all = time.time()
+for name, extra, note in SWEEP:
+    print("")
+    print("=" * 72)
+    print("RUN " + name + "  -  " + note)
+    print("=" * 72, flush=True)
+    cmd = BASE + ["--run-name", name] + extra
+    t0 = time.time()
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT, text=True, bufsize=1)
+    for line in proc.stdout:
+        print(line, end="", flush=True)
+    proc.wait()
+    print(name + " exit=" + str(proc.returncode) +
+          "  " + str(round((time.time() - t0) / 60, 1)) + " min", flush=True)
+
 print("")
-print("exit=" + str(proc.returncode) + "  elapsed=" +
-      str(round((time.time() - t0) / 60, 1)) + " min")"""
+print("sweep total " + str(round((time.time() - t_all) / 60, 1)) + " min")"""
 
 
-CELL_COLLECT = """runs = sorted([d for d in RUNS.iterdir()
-               if d.is_dir() and (d / "history.json").exists()],
-              key=lambda d: d.stat().st_mtime)
-h = None
-if not runs:
-    print("no completed run found - see the training output above")
-else:
-    run = runs[-1]
-    h = json.loads((run / "history.json").read_text())
-    print("run:", run.name)
-    print("best val IoU", round(h["best_val_iou"], 4),
-          "@ epoch", h["best_epoch"], "over", len(h["epochs"]), "epochs")
-    for f in ("best.pt", "history.json", "metadata.json", "train.log"):
-        if (run / f).exists():
-            shutil.copy2(run / f, WORK / f)
+CELL_COLLECT = """summaries = []
+for d in sorted(RUNS.iterdir()):
+    f = d / "summary.json"
+    if d.is_dir() and f.exists():
+        summaries.append(json.loads(f.read_text()))
 
-# Keep the output small. Without this, `kaggle kernels output` drags the whole
-# cloned 169 MB dataset back down - which is what made the v3 download hang.
+print("run            pos_w  dice   ep  best_ep   val IoU   TEST IoU    P      R")
+print("-" * 78)
+best = None
+for s in sorted(summaries, key=lambda x: -x["metrics"]["test"]["iou"]):
+    m, c = s["metrics"]["test"], s["config"]
+    pw = "auto" if c["pos_weight"] is None else str(c["pos_weight"])
+    print(s["run"].ljust(14) + pw.ljust(7) + str(c["dice_weight"]).ljust(7) +
+          str(s["epochs_run"]).rjust(3) + str(s["best_epoch"]).rjust(8) +
+          ("%.4f" % s["best_val_iou"]).rjust(10) +
+          ("%.4f" % m["iou"]).rjust(11) +
+          ("%.3f" % m["precision"]).rjust(7) +
+          ("%.3f" % m["recall"]).rjust(7))
+    if best is None:
+        best = s
+
+print("")
+print("baseline to beat: test IoU 0.4656 (Kaggle v5, 2026-08-22)")
+if best:
+    print("best here:        test IoU " + ("%.4f" % best["metrics"]["test"]["iou"]) +
+          "  (" + best["run"] + ")")
+
+# Ship only the winning weights plus every summary; the repo clone and the
+# resume states must not go into the output or the download drags 169 MB back.
+if best:
+    shutil.copy2(RUNS / best["run"] / "best.pt", WORK / "best.pt")
+    (WORK / "sweep.json").write_text(json.dumps(summaries, indent=2))
+    for f in ("history.json", "train.log"):
+        if (RUNS / best["run"] / f).exists():
+            shutil.copy2(RUNS / best["run"] / f, WORK / f)
+h = json.loads((RUNS / best["run"] / "history.json").read_text()) if best else None
+
 for d in RUNS.iterdir():
     if d.is_dir():
-        for junk in ("state.pt", "state.pt.bak", "state.pt.tmp", "last.pt"):
+        for junk in ("state.pt", "state.pt.bak", "state.pt.tmp", "last.pt", "best.pt"):
             (d / junk).unlink(missing_ok=True)
 os.chdir(WORK)
 shutil.rmtree(SRC, ignore_errors=True)
 shutil.rmtree(RUNS, ignore_errors=True)
+print("")
 print("artifacts:", sorted(q.name for q in WORK.glob("*") if q.is_file()))"""
 
 
