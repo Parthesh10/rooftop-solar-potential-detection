@@ -43,32 +43,49 @@ if "not found" in gpu_name:
         "No GPU in this session. Push with: "
         "kaggle kernels push -p kaggle --accelerator gpuT4x2")
 
-# P100 is sm_60 and the stock Kaggle torch carries no kernels for it, so
-# torch.cuda.is_available() returns True while every launch fails. This has to
-# run BEFORE torch is imported - swapping the wheel afterwards leaves a stale
-# module in memory.
-if "P100" in gpu_name:
-    print("P100 detected -> installing a cu118 torch that supports sm_60")
-    subprocess.run([sys.executable, "-m", "pip", "install", "-q",
-                    "torch", "torchvision",
-                    "--index-url", "https://download.pytorch.org/whl/cu118"],
-                   check=True)
+PROBE = (
+    "import torch;"
+    "p=torch.cuda.get_device_properties(0);"
+    "cap='sm_'+str(p.major)+str(p.minor);"
+    "t=torch.randn(256,256,device='cuda');"
+    "ok=bool(torch.isfinite(t@t).all());"
+    "print(torch.__version__, cap, cap in torch.cuda.get_arch_list(), ok)"
+)
 
-import torch
-p = torch.cuda.get_device_properties(0)
-cap = "sm_" + str(p.major) + str(p.minor)
-print("torch", torch.__version__, "| cuda", torch.cuda.is_available())
-print(p.name, "|", round(p.total_memory / 1024**3, 1), "GB |", cap)
-print("torch built for:", torch.cuda.get_arch_list())
+def probe():
+    # Runs in a FRESH interpreter. That matters: this notebook process may
+    # already hold a stale torch, and it is the subprocess view that decides
+    # whether training works - scripts/train_swiss.py is itself launched as a
+    # subprocess further down.
+    r = subprocess.run([sys.executable, "-c", PROBE],
+                       capture_output=True, text=True)
+    return r.stdout.strip(), r.returncode, r.stderr.strip()[-400:]
 
-if cap not in torch.cuda.get_arch_list():
-    raise SystemExit(cap + " is missing from this torch build - kernel "
-                     "launches would fail. Request a T4: --accelerator gpuT4x2")
+out, rc, err = probe()
+print("probe:", out or err)
 
-# Prove a real kernel runs, rather than trusting is_available().
-_t = torch.randn(512, 512, device="cuda")
-assert torch.isfinite(_t @ _t).all(), "CUDA matmul produced non-finite values"
-print("CUDA matmul OK")"""
+# A P100 is sm_60 and the stock Kaggle image ships torch built for sm_70+.
+# On that pairing torch.cuda.is_available() returns True while every kernel
+# launch fails, so the arch list has to be checked explicitly, not trusted.
+if rc != 0 or "True True" not in out:
+    print("this torch cannot drive this GPU - installing a cu118 build")
+    r = subprocess.run(
+        [sys.executable, "-m", "pip", "install",
+         "torch==2.4.1+cu118", "torchvision==0.19.1+cu118",
+         "--index-url", "https://download.pytorch.org/whl/cu118"],
+        capture_output=True, text=True)
+    print(r.stdout[-1200:] if r.returncode == 0 else r.stderr[-2000:])
+    if r.returncode != 0:
+        raise SystemExit("cu118 torch install failed - see pip output above")
+    out, rc, err = probe()
+    print("probe after reinstall:", out or err)
+
+if rc != 0 or "True True" not in out:
+    raise SystemExit(
+        "GPU still unusable after the reinstall (" + (out or err) + "). "
+        "Request a T4 instead: --accelerator gpuT4x2")
+
+print("GPU verified by real matmul in a fresh interpreter")"""
 
 
 CELL_CLONE = """REPO = "__REPO_URL__"
@@ -100,7 +117,7 @@ os.environ["RUNS_ROOT"] = str(RUNS)
 
 # A T4 has 16 GB but tensor cores; a P100 has 16 GB and none. Both fit a
 # larger batch than the 4 GB local card.
-BATCH = 16
+BATCH = 16   # both T4 and P100 have 16 GB; 4x the local 4 GB card
 
 cmd = [sys.executable, "-u", "scripts/train_swiss.py",
        "--epochs", "80", "--batch-size", str(BATCH), "--lr", "3e-4",
