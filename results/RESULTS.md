@@ -6,7 +6,44 @@ harness** (`model.eval()` on, no empty-tile IoU inversion). Anything measured
 any other way is not comparable — see "Why the 2023 checkpoints are not a
 baseline" below.
 
-## Current best — 2026-08-22
+> **Direction (2026-08-29):** the Swiss set (420 train tiles) has been shown to
+> be too small to benefit from a pretrained encoder — see the encoder sweep
+> below. The project is moving to the full **Inria** dataset for a general
+> model; Swiss becomes a secondary eval. New headline target: **Inria official
+> val IoU ≥ 0.72**.
+
+## Encoder sweep — 2026-08-29 (Kaggle T4, fp16, ~45 min)
+
+Four architectures, loss recipe fixed at `pos_weight 2.4 / dice_weight 0.7`,
+80 epochs each. **Question: does an ImageNet encoder beat the scratch U-Net?**
+**Answer on Swiss: no.**
+
+| run | arch / encoder | val IoU | **test IoU** | P | R |
+|---|---|---|---|---|---|
+| U1 | U-Net / **resnet34** (ImageNet) | 0.6927 | **0.5653** | 0.727 | 0.742 |
+| U0 | U-Net / scratch *(control)* | 0.5980 | 0.5651 | 0.676 | 0.779 |
+| U2 | U-Net++ / efficientnet-b0 | 0.6680 | 0.5191 | 0.732 | 0.665 |
+| U3 | DeepLabV3+ / efficientnet-b2 | 0.6420 | 0.5087 | 0.715 | 0.665 |
+
+### What it showed
+
+* **resnet34 and scratch tie on the held-out test set** (0.5653 vs 0.5651).
+  The two heavier pretrained models (effb0, effb2) score *worse* than scratch.
+* **The pretrained models overfit the val block.** resnet34's val→test drop is
+  **13 points** (0.69 → 0.57); the scratch net's is 4 (0.60 → 0.57). A 58-tile
+  val set from one geographic block is not enough to select on — the pretrained
+  encoder fits it and does not carry to the test block.
+* **The metric has ≈ ±2 IoU of noise.** The scratch control here scored 0.5651;
+  the *same config* on a P100 in fp32 (sweep D, 2026-08-22) scored 0.5442. The
+  hardware/precision change alone moved it ~2 points, so 0.5653-vs-0.5442 is
+  **not** a real gain.
+* **Takeaway:** 420 tiles is the binding constraint, exactly as suspected —
+  but the fix is *more data*, not a better encoder on the same data. On to Inria.
+
+Weights kept for reference: `unet_swiss_resnet34_20260829.pt` (U1). Not promoted
+over `unet_swiss_geo_D_pw2.4_d0.7.pt` — they are tied within noise.
+
+## Swiss baseline — sweep D, 2026-08-22
 
 **Test IoU 0.5442.** Weights: `unet_swiss_geo_D_pw2.4_d0.7.pt`
 (run `D_pw2.4_d0.7`, best epoch 69 of 80).
@@ -49,7 +86,9 @@ duration.
 
 | date | model | test IoU | notes |
 |---|---|---|---|
-| 2026-08-22 | sweep D | **0.5442** | current best |
+| 2026-08-29 | U-Net / resnet34 (ImageNet) | 0.5653 | Swiss encoder sweep; ties scratch |
+| 2026-08-29 | U-Net / scratch (T4/fp16) | 0.5651 | same config as sweep D, +2 from hardware/noise |
+| 2026-08-22 | sweep D (P100/fp32) | 0.5442 | Swiss baseline |
 | 2026-08-22 | first clean run | 0.4656 | early-stopped at 27, best @ 12 |
 | 2026-08-11 | 2023 `path raise 130.pt` | (0.4946) | **contaminated — not a baseline** |
 
@@ -72,7 +111,7 @@ So all three of their numbers are contaminated to an unknown degree:
   competitive with 0.5442 but it has seen 69% of that test set.
 
 There is no way to re-partition this dataset that gives those checkpoints an
-honest test set. Compare future work against **0.5442**.
+honest test set.
 
 ## Reproducing
 
@@ -90,17 +129,14 @@ Locally (~2.5 h, batch 4 to stay inside 4 GB):
 
 ## Next
 
-1. **Pretrained encoders** — *wired, ready to run.* `model/registry.py` builds
-   the verbatim U-Net plus `segmentation_models_pytorch` architectures;
-   `scripts/train_swiss.py --arch/--encoder/--encoder-weights` selects one and
-   auto-switches to ImageNet normalisation. The Kaggle notebook now sweeps four:
-   scratch U-Net (control), U-Net+ResNet34, U-Net+++EfficientNet-B0,
-   DeepLabV3++EfficientNet-B2. A 2-epoch local sanity run (ResNet34) reached
-   train IoU 0.44 / val 0.39 — learning far faster than the scratch net.
-   `git push` then `kaggle kernels push`.
-2. **Threshold sweep.** Everything above uses 0.5. Recall (0.777) far exceeds
-   precision (0.655), so a higher threshold may buy IoU for free — this costs
-   one evaluation pass, no retraining.
-3. **Test-time augmentation** — `evaluate.py --tta` averages the 8 dihedral
-   transforms, typically +1-2 IoU for 8x inference cost.
-4. **Inria** for scale and geographic diversity, then a Bhopal fine-tune set.
+1. **Inria training** — the main event now. `scripts/train_inria.py` +
+   `kaggle_inria/` train on the full Inria set (official 1–5 split, 155/25
+   tiles, on-the-fly 512² windows). Two archs: U-Net/resnet34 and
+   U-Net++/efficientnet-b0. Target: Inria official val IoU ≥ 0.72.
+2. **Broaden geography** — Inria is 5 Western cities. Add Google Open Buildings
+   (Global South) and/or SpaceNet once the Inria pipeline is solid.
+3. **Threshold + TTA** — cheap post-hoc gains on whichever model ships.
+   `evaluate.py --tta` averages the 8 dihedral transforms (+1–2 IoU, 8× cost).
+4. **Swiss as secondary eval** — keep scoring the shipped model on the Swiss
+   geographic test split as an out-of-distribution check (different country,
+   different label semantics, 0.25 m/px vs 0.3).

@@ -116,15 +116,16 @@ CELL_TRAIN = """RUNS = WORK / "runs"
 RUNS.mkdir(exist_ok=True)
 os.environ["RUNS_ROOT"] = str(RUNS)
 
-# Inria training. The architecture is carried over from the Swiss encoder sweep
-# (kaggle/); this run is about scale and geographic spread, not architecture
-# search, so keep it to two contenders. samples_per_tile 48 -> 155*48 = 7440
-# windows/epoch; a pretrained encoder converges well inside 60 epochs.
+# Inria training. Two contenders carried over from the Swiss encoder sweep
+# (kaggle/): resnet34 tied the scratch net there and effb0 was mid-pack, but
+# that sweep was data-starved (420 tiles) - Inria has ~100x the effective data,
+# so the encoder comparison is worth redoing here. samples_per_tile 48 ->
+# 155*48 = 7440 windows/epoch; a pretrained encoder converges inside 60 epochs.
 SWEEP = [
     ("I1_unet_rn34",    ["--arch", "unet",   "--encoder", "resnet34"],
      "U-Net + ResNet34/ImageNet"),
-    ("I2_unetpp_effb2", ["--arch", "unet++", "--encoder", "efficientnet-b2"],
-     "U-Net++ + EfficientNet-B2/ImageNet"),
+    ("I2_unetpp_effb0", ["--arch", "unet++", "--encoder", "efficientnet-b0"],
+     "U-Net++ + EfficientNet-B0/ImageNet (the report's arch, modernised)"),
 ]
 
 BASE = [sys.executable, "-u", "scripts/train_inria.py",

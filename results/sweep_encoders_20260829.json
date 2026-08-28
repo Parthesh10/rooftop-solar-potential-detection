@@ -1,0 +1,202 @@
+[
+  {
+    "run": "U0_scratch",
+    "best_val_iou": 0.5979888566379161,
+    "best_epoch": 49,
+    "epochs_run": 80,
+    "model": {
+      "arch": "unet",
+      "encoder": "scratch",
+      "encoder_weights": null,
+      "in_channels": 3,
+      "out_channels": 1,
+      "bilinear": false,
+      "stats_key": "all"
+    },
+    "config": {
+      "arch": "unet",
+      "encoder": "scratch",
+      "encoder_weights": null,
+      "stats_key": "all",
+      "pos_weight": 2.4,
+      "dice_weight": 0.7,
+      "lr": 0.0003,
+      "batch_size": 16,
+      "epochs": 80,
+      "patience": 40
+    },
+    "metrics": {
+      "train": {
+        "iou": 0.685931786293616,
+        "f1": 0.7875352746602144,
+        "accuracy": 0.9488698353225218,
+        "precision": 0.7805076186478237,
+        "recall": 0.850960094980151
+      },
+      "val": {
+        "iou": 0.5979888566379161,
+        "f1": 0.7025508064195984,
+        "accuracy": 0.9440460689655173,
+        "precision": 0.716723457123663,
+        "recall": 0.7645835922468619
+      },
+      "test": {
+        "iou": 0.5650952075640225,
+        "f1": 0.6707751661327421,
+        "accuracy": 0.9186910270270271,
+        "precision": 0.6762593734261644,
+        "recall": 0.7785208573364475
+      }
+    }
+  },
+  {
+    "run": "U1_unet_rn34",
+    "best_val_iou": 0.6927181743310259,
+    "best_epoch": 67,
+    "epochs_run": 80,
+    "model": {
+      "arch": "unet",
+      "encoder": "resnet34",
+      "encoder_weights": "imagenet",
+      "in_channels": 3,
+      "out_channels": 1,
+      "bilinear": false,
+      "stats_key": "imagenet"
+    },
+    "config": {
+      "arch": "unet",
+      "encoder": "resnet34",
+      "encoder_weights": "imagenet",
+      "stats_key": "imagenet",
+      "pos_weight": 2.4,
+      "dice_weight": 0.7,
+      "lr": 0.0003,
+      "batch_size": 16,
+      "epochs": 80,
+      "patience": 40
+    },
+    "metrics": {
+      "train": {
+        "iou": 0.7780657140462177,
+        "f1": 0.861271568116253,
+        "accuracy": 0.9673962414206754,
+        "precision": 0.8501529355111319,
+        "recall": 0.9026562556689971
+      },
+      "val": {
+        "iou": 0.6927181743310259,
+        "f1": 0.8008416616032555,
+        "accuracy": 0.9462068965517242,
+        "precision": 0.7899080933039038,
+        "recall": 0.8378336485570452
+      },
+      "test": {
+        "iou": 0.5652677774401629,
+        "f1": 0.676165197882137,
+        "accuracy": 0.8992000000000001,
+        "precision": 0.727395317327135,
+        "recall": 0.741605015159666
+      }
+    }
+  },
+  {
+    "run": "U2_unetpp_effb0",
+    "best_val_iou": 0.6680327883356229,
+    "best_epoch": 56,
+    "epochs_run": 80,
+    "model": {
+      "arch": "unet++",
+      "encoder": "efficientnet-b0",
+      "encoder_weights": "imagenet",
+      "in_channels": 3,
+      "out_channels": 1,
+      "bilinear": false,
+      "stats_key": "imagenet"
+    },
+    "config": {
+      "arch": "unet++",
+      "encoder": "efficientnet-b0",
+      "encoder_weights": "imagenet",
+      "stats_key": "imagenet",
+      "pos_weight": 2.4,
+      "dice_weight": 0.7,
+      "lr": 0.0003,
+      "batch_size": 16,
+      "epochs": 80,
+      "patience": 40
+    },
+    "metrics": {
+      "train": {
+        "iou": 0.8117034833000506,
+        "f1": 0.8882053642450706,
+        "accuracy": 0.9706523987943392,
+        "precision": 0.8597017062476802,
+        "recall": 0.9338164929117859
+      },
+      "val": {
+        "iou": 0.6680327883356229,
+        "f1": 0.7767243136820335,
+        "accuracy": 0.9430190344827586,
+        "precision": 0.8074220537013886,
+        "recall": 0.7927769372796921
+      },
+      "test": {
+        "iou": 0.519067993864826,
+        "f1": 0.6221621069510208,
+        "accuracy": 0.8921945945945945,
+        "precision": 0.7316796117479241,
+        "recall": 0.6653876871287795
+      }
+    }
+  },
+  {
+    "run": "U3_dlv3p_effb2",
+    "best_val_iou": 0.6419899011430537,
+    "best_epoch": 42,
+    "epochs_run": 80,
+    "model": {
+      "arch": "deeplabv3+",
+      "encoder": "efficientnet-b2",
+      "encoder_weights": "imagenet",
+      "in_channels": 3,
+      "out_channels": 1,
+      "bilinear": false,
+      "stats_key": "imagenet"
+    },
+    "config": {
+      "arch": "deeplabv3+",
+      "encoder": "efficientnet-b2",
+      "encoder_weights": "imagenet",
+      "stats_key": "imagenet",
+      "pos_weight": 2.4,
+      "dice_weight": 0.7,
+      "lr": 0.0003,
+      "batch_size": 16,
+      "epochs": 80,
+      "patience": 40
+    },
+    "metrics": {
+      "train": {
+        "iou": 0.7527718360910455,
+        "f1": 0.8442160411901548,
+        "accuracy": 0.9633530449009962,
+        "precision": 0.8132696643213201,
+        "recall": 0.9033350398919896
+      },
+      "val": {
+        "iou": 0.6419899011430537,
+        "f1": 0.7582737195225319,
+        "accuracy": 0.947398344827586,
+        "precision": 0.7692292667783978,
+        "recall": 0.7870376884328069
+      },
+      "test": {
+        "iou": 0.5087268529818001,
+        "f1": 0.6052871448777307,
+        "accuracy": 0.8936778378378378,
+        "precision": 0.7150097995969833,
+        "recall": 0.6645208072204911
+      }
+    }
+  }
+]
