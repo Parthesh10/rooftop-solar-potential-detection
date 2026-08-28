@@ -40,6 +40,11 @@ nvidia-ml-py==13.610.43
 # memory-mapped windowed reads over the 5000x5000 Inria GeoTIFFs
 tifffile==2026.7.31
 
+# pretrained-encoder architectures (U-Net++/ResNet34/EfficientNet, DeepLabV3+).
+# Pulls in timm + huggingface-hub; encoder weights download from the HF hub on
+# first build. model/registry.py falls back to the scratch U-Net without it.
+segmentation-models-pytorch==0.5.0
+
 # Optional — richer augmentation; the dataloader falls back to torchvision.
 # albumentations
 

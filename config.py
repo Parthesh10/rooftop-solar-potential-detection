@@ -90,6 +90,13 @@ SERVING_ZOOM = 19
 class TrainConfig:
     """Defaults for a training run. Overridable from the notebook or a CLI."""
 
+    # model — F-04.2 (plan.md §4.2): a pretrained encoder is the change expected
+    # to actually move test IoU past 0.5442. "scratch" keeps the verbatim 2023
+    # U-Net as the control. See model/registry.py.
+    arch: str = "unet"                     # "unet" | "unet++" | "deeplabv3+" | ...
+    encoder: str = "scratch"               # "scratch" | "resnet34" | "efficientnet-b0" | ...
+    encoder_weights: str | None = None     # "imagenet" to pull pretrained weights
+
     # data
     stats_key: str = DEFAULT_STATS_KEY
     train_dir: str = "train"
