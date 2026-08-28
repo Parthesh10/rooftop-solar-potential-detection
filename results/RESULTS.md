@@ -1,61 +1,102 @@
-# First trustworthy result — 2026-08-22
+# Results
 
-Trained on Kaggle (Tesla P100, 4.6 min, 7 s/epoch — about 12x the local
-GTX 1650's 75-102 s/epoch) using the leakage-free geographic split and the
-corrected metric harness.
+All numbers below use the **leakage-free geographic split** (420 train / 58 val
+/ 74 test, zero tiles adjacent across splits) and the **corrected metric
+harness** (`model.eval()` on, no empty-tile IoU inversion). Anything measured
+any other way is not comparable — see "Why the 2023 checkpoints are not a
+baseline" below.
 
-Weights: `results/unet_swiss_geo_20260822.pt` (best epoch 12).
+## Current best — 2026-08-22
 
-## Headline
+**Test IoU 0.5442.** Weights: `unet_swiss_geo_D_pw2.4_d0.7.pt`
+(run `D_pw2.4_d0.7`, best epoch 69 of 80).
 
-| split | IoU | F1 | acc | precision | recall | n | undefined |
+| split | IoU | F1 | acc | precision | recall |
+|---|---|---|---|---|---|
+| val | 0.5948 | — | — | — | — |
+| **test** | **0.5442** | — | — | 0.655 | 0.777 |
+
+Config: `--pos-weight 2.4 --dice-weight 0.7 --epochs 80 --batch-size 16
+--lr 3e-4 --patience 40`, AdamW + cosine with 5-epoch warmup, D4 + photometric
+augmentation, 224x224 random crops.
+
+## The sweep that produced it
+
+Four configs, Kaggle Tesla P100, ~40 min total. All ran the full 80 epochs.
+
+| run | pos_weight | dice | best epoch | val IoU | **test IoU** | P | R |
 |---|---|---|---|---|---|---|---|
-| train | 0.5845 | 0.7115 | 0.9222 | 0.6709 | 0.8339 | 420 | 12 |
-| val   | 0.5466 | 0.6700 | 0.9278 | 0.6796 | 0.7511 | 58 | 7 |
-| **test** | **0.4656** | 0.5736 | 0.8911 | 0.6404 | 0.6701 | 74 | 5 |
+| **D** | 2.4 | 0.7 | 69 | 0.5948 | **0.5442** | 0.655 | 0.777 |
+| B | 2.4 | 0.5 | 58 | 0.6001 | 0.5369 | 0.673 | 0.751 |
+| C | 1.0 | 0.5 | 49 | 0.5924 | 0.5003 | 0.706 | 0.652 |
+| A | auto (~5.9) | 0.5 | 46 | 0.5693 | 0.4470 | 0.650 | 0.642 |
 
-**Test IoU 0.4656 is the first number this project has produced that is
-actually defensible.** Every earlier figure was measured either with the
-broken harness (F-03 / F-08) or on a split that leaked (F-05), usually both.
+### What it showed
 
-## The 2023 checkpoint cannot be compared against this
+**`pos_weight` was the dominant factor, worth ~9 IoU points.** The auto-estimate
+(negatives/positives ≈ 5.9) over-predicts badly. Its square root, 2.4, is much
+better; dropping weighting entirely (1.0) gives the best precision of the four
+(0.706) but loses so much recall that IoU falls again.
 
-Scoring `path raise 130.pt` on this same clean split gives test IoU 0.4946,
-which looks better. It is not a valid comparison:
+**An earlier hypothesis was wrong.** The previous run (test IoU 0.4656)
+early-stopped at epoch 27 with its best at 12, and I attributed the weak result
+to under-training. Run A tests that directly: same `pos_weight`, but 80 full
+epochs. It scored **0.4470 — worse than the early-stopped run.** Training
+longer with a bad loss weight actively hurt. The fix was the weight, not the
+duration.
 
-    new val  (58 tiles): 41 were in the 2023 training set  -> 71%
-    new test (74 tiles): 51 were in the 2023 training set  -> 69%
+## History
 
-The 2023 model was trained on a random split of the same 574 tiles, so roughly
-seven of every ten tiles in *any* newly-drawn evaluation set are tiles it
-already memorised. There is no way to re-partition this dataset that gives the
-old checkpoint an honest test set. Its numbers — 0.5566 as reported in 2023,
-0.5170 re-measured with the fixed harness, 0.4946 here — are all contaminated
-to an unknown degree, and none of them are a baseline.
+| date | model | test IoU | notes |
+|---|---|---|---|
+| 2026-08-22 | sweep D | **0.5442** | current best |
+| 2026-08-22 | first clean run | 0.4656 | early-stopped at 27, best @ 12 |
+| 2026-08-11 | 2023 `path raise 130.pt` | (0.4946) | **contaminated — not a baseline** |
 
-The only clean comparison would be a fresh model trained on the geographic
-split, which is exactly what this run is. Future runs compare against 0.4656.
+## Why the 2023 checkpoints are not a baseline
 
-## The run under-trained
+`model/path raise *.pt` were trained on a *random* split of the same 574 tiles.
+The tiles are 62.5 m apart, so a random split leaks by construction (F-05) — and
+worse, any freshly drawn evaluation set is mostly tiles they already trained on:
 
-Early stopping fired at epoch 27 with the best epoch at 12, so:
+    new val  (58 tiles): 41 were in the 2023 training set -> 71%
+    new test (74 tiles): 51 were in the 2023 training set -> 69%
 
-* only ~12 epochs of useful training happened, against 80 requested;
-* the cosine schedule never annealed — LR was still at 2.4e-4 when it stopped;
-* val IoU swung between 0.375 and 0.54 across consecutive epochs, because the
-  validation set is 58 tiles and therefore noisy. `patience=15` on a signal
-  that noisy stops runs more or less at random.
+So all three of their numbers are contaminated to an unknown degree:
 
-Precision also collapsed relative to the old model (0.64 vs 0.78) while recall
-rose (0.67 vs 0.60) — the estimated `pos_weight` of ~5.9 is pushing hard toward
-over-prediction, which costs IoU.
+* **0.5566** — reported in the 2023 project report. Also measured with
+  BatchNorm in *training* mode (F-03) and with the empty-tile IoU inversion
+  (F-08), so it is not a valid measurement even ignoring the leak.
+* **0.5170** — the same checkpoint re-scored with the fixed harness.
+* **0.4946** — the same checkpoint on the clean geographic split. Looks
+  competitive with 0.5442 but it has seen 69% of that test set.
 
-## Next run
+There is no way to re-partition this dataset that gives those checkpoints an
+honest test set. Compare future work against **0.5442**.
 
-1. `--patience 40` (or disable early stopping) so the schedule completes.
-2. Sweep `pos_weight` — try the sqrt of the imbalance (~2.4) and 1.0 against
-   the current ~5.9, and `dice_weight` 0.5 vs 0.7.
-3. Only then move to a pretrained encoder (plan.md 4.2), which is the change
-   expected to actually move IoU rather than rebalance it.
+## Reproducing
 
-At 4.6 min a run, each of these is cheap on Kaggle.
+```powershell
+git push origin main
+.\.venv\Scripts\python.exe -m kaggle kernels push -p kaggle --accelerator gpuT4x2
+.\.venv\Scripts\python.exe -m kaggle kernels output partheshgupta/rooftop-solar-u-net-training -p kaggle_out
+```
+
+Locally (~2.5 h, batch 4 to stay inside 4 GB):
+
+```powershell
+.\.venv\Scripts\python.exe scripts\train_swiss.py --pos-weight 2.4 --dice-weight 0.7 --patience 40
+```
+
+## Next
+
+1. **Pretrained encoders** (`segmentation_models_pytorch`, U-Net++/ResNet34 or
+   EfficientNet-B0). The remaining gap to published Inria work is mostly here —
+   training a 14.8 M-parameter U-Net from scratch on 420 tiles is the binding
+   constraint, not the loss recipe. Needs Kaggle; will not fit in 4 GB.
+2. **Threshold sweep.** Everything above uses 0.5. Recall (0.777) far exceeds
+   precision (0.655), so a higher threshold may buy IoU for free — this costs
+   one evaluation pass, no retraining.
+3. **Test-time augmentation** — `evaluate.py --tta` averages the 8 dihedral
+   transforms, typically +1-2 IoU for 8x inference cost.
+4. **Inria** for scale and geographic diversity, then a Bhopal fine-tune set.

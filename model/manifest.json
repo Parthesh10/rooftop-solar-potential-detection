@@ -221,5 +221,20 @@
       },
       "sha256": "714475110c316b16e2865a8c618de59fbc5b9a63d036d7db8e224fff1f4a55c0"
     }
+  },
+  "_current_best": {
+    "weights": "results/unet_swiss_geo_D_pw2.4_d0.7.pt",
+    "test_iou": 0.5442,
+    "val_iou": 0.5948,
+    "measured": "2026-08-22",
+    "split": "geographic (1km blocks + 125m buffer), 420/58/74, zero cross-split adjacency",
+    "config": {
+      "pos_weight": 2.4,
+      "dice_weight": 0.7,
+      "epochs": 80,
+      "batch_size": 16,
+      "lr": 0.0003
+    },
+    "note": "THIS is the project baseline. The path-raise-*.pt entries below are contaminated: they trained on a random split of the same 574 tiles, so ~69% of any new test set is data they memorised. See results/RESULTS.md."
   }
 }
