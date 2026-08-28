@@ -101,7 +101,13 @@ print("cloned at", sh(["git", "rev-parse", "--short", "HEAD"]))
 print("train images:", len(list((SRC / "data" / "train" / "images").glob("*.png"))))
 
 subprocess.run([sys.executable, "-m", "pip", "install", "-q",
-                "tifffile", "nvidia-ml-py"], check=False)""".replace(
+                "tifffile", "nvidia-ml-py",
+                "segmentation-models-pytorch>=0.5.0"], check=False)
+
+# smp pulls encoder weights from the HF hub on first build; fail loudly here
+# rather than mid-sweep if the notebook has no internet.
+import segmentation_models_pytorch as smp
+print("segmentation-models-pytorch", smp.__version__)""".replace(
     "__REPO_URL__", REPO_URL)
 
 
@@ -115,19 +121,30 @@ CELL_TRAIN = """RUNS = WORK / "runs"
 RUNS.mkdir(exist_ok=True)
 os.environ["RUNS_ROOT"] = str(RUNS)
 
-# Sweep. The first Kaggle run early-stopped at epoch 27 with its best at 12,
-# so the cosine schedule never annealed and precision fell to 0.64 (from the
-# 2023 model's 0.78) while recall rose - the auto-estimated pos_weight of ~5.9
-# over-predicts. patience is raised to 40 so the schedule completes, and
-# pos_weight is swept against the auto value.
+# Architecture sweep (plan.md 4.2). The loss recipe is now fixed at the sweep-D
+# winner (pos_weight 2.4, dice_weight 0.7 -> test IoU 0.5442); the open question
+# is the encoder. Training a 14.8 M-param U-Net from scratch on 420 tiles was
+# the binding constraint, not the loss - an ImageNet encoder should move it.
+#
+# U0 is the scratch control: same code path, no pretrained weights, so any gain
+# from U1..U3 is unambiguously the encoder. stats_key auto-switches to ImageNet
+# for the pretrained runs (model.registry.recommended_stats_key).
 SWEEP = [
-    ("A_auto_pw",   [],                                  "patience 40, pos_weight auto (~5.9)"),
-    ("B_pw2.4",     ["--pos-weight", "2.4"],             "sqrt of the imbalance"),
-    ("C_pw1.0",     ["--pos-weight", "1.0"],             "no class weighting"),
-    ("D_pw2.4_d0.7",["--pos-weight", "2.4", "--dice-weight", "0.7"], "more Dice"),
+    ("U0_scratch",      ["--arch", "unet",       "--encoder", "scratch"],
+     "verbatim 2023 U-Net, control"),
+    ("U1_unet_rn34",    ["--arch", "unet",       "--encoder", "resnet34",
+                         "--encoder-weights", "imagenet"],
+     "U-Net + ResNet34/ImageNet - cheapest big win"),
+    ("U2_unetpp_effb0", ["--arch", "unet++",     "--encoder", "efficientnet-b0",
+                         "--encoder-weights", "imagenet"],
+     "U-Net++ + EfficientNet-B0 - upgrade of the report's best model"),
+    ("U3_dlv3p_effb2",  ["--arch", "deeplabv3+", "--encoder", "efficientnet-b2",
+                         "--encoder-weights", "imagenet"],
+     "DeepLabV3+ + EfficientNet-B2 - ASPP for multi-scale roofs"),
 ]
 
 BASE = [sys.executable, "-u", "scripts/train_swiss.py",
+        "--pos-weight", "2.4", "--dice-weight", "0.7",
         "--epochs", "80", "--batch-size", "16", "--lr", "3e-4",
         "--workers", "2", "--patience", "40", "--amp", "auto",
         "--gpu-util-target", "100", "--gpu-temp-limit", "0",
@@ -160,13 +177,14 @@ for d in sorted(RUNS.iterdir()):
     if d.is_dir() and f.exists():
         summaries.append(json.loads(f.read_text()))
 
-print("run            pos_w  dice   ep  best_ep   val IoU   TEST IoU    P      R")
-print("-" * 78)
+print("run              arch / encoder            ep  best_ep   val IoU   TEST IoU    P      R")
+print("-" * 92)
 best = None
 for s in sorted(summaries, key=lambda x: -x["metrics"]["test"]["iou"]):
     m, c = s["metrics"]["test"], s["config"]
-    pw = "auto" if c["pos_weight"] is None else str(c["pos_weight"])
-    print(s["run"].ljust(14) + pw.ljust(7) + str(c["dice_weight"]).ljust(7) +
+    enc = c.get("encoder", "scratch")
+    desc = c.get("arch", "unet") + (" / " + enc if enc not in (None, "scratch") else " (scratch)")
+    print(s["run"].ljust(16) + desc.ljust(26) +
           str(s["epochs_run"]).rjust(3) + str(s["best_epoch"]).rjust(8) +
           ("%.4f" % s["best_val_iou"]).rjust(10) +
           ("%.4f" % m["iou"]).rjust(11) +
@@ -176,7 +194,7 @@ for s in sorted(summaries, key=lambda x: -x["metrics"]["test"]["iou"]):
         best = s
 
 print("")
-print("baseline to beat: test IoU 0.4656 (Kaggle v5, 2026-08-22)")
+print("baseline to beat: test IoU 0.5442 (sweep D, scratch U-Net, 2026-08-22)")
 if best:
     print("best here:        test IoU " + ("%.4f" % best["metrics"]["test"]["iou"]) +
           "  (" + best["run"] + ")")
@@ -226,12 +244,14 @@ if h:
 
 
 cells = [
-    md("# Rooftop Solar - U-Net training on Kaggle GPU\n\n"
-       "Trains the repaired U-Net on the Swiss DOP25 set using the "
-       "leakage-free geographic split (F-05), with the corrected metric "
-       "harness (F-03 / F-08).\n\n"
-       "Artifacts land in `/kaggle/working` and come back via "
-       "`kaggle kernels output`."),
+    md("# Rooftop Solar - encoder sweep on Kaggle GPU\n\n"
+       "Sweeps four segmentation architectures on the Swiss DOP25 set using the "
+       "leakage-free geographic split (F-05) and the corrected metric harness "
+       "(F-03 / F-08): a scratch U-Net control plus three ImageNet-pretrained "
+       "encoders (`segmentation_models_pytorch`). Loss recipe is fixed at the "
+       "sweep-D winner (pos_weight 2.4, dice_weight 0.7).\n\n"
+       "Baseline to beat: **test IoU 0.5442**. Artifacts land in "
+       "`/kaggle/working` and come back via `kaggle kernels output`."),
     md("## 0. GPU check, before importing torch"),
     code(CELL_GPU),
     md("## 1. Get the code\n\nThe repo carries the 169 MB Swiss dataset, so "
@@ -241,10 +261,12 @@ cells = [
        "this reproduces the local manifests exactly: 420 train / 58 val / "
        "74 test, with zero tiles adjacent across splits."),
     code(CELL_SPLIT),
-    md("## 3. Train\n\nThe GPU governor is off here - duty-cycling a "
-       "datacenter card only burns quota. AMP stays on `auto` so "
-       "`utils.select_amp` picks fp16 on a T4 (tensor cores) and skips it on "
-       "a P100, after NaN-probing the real model."),
+    md("## 3. Sweep the encoders\n\nFour runs, loss recipe fixed. `U0_scratch` "
+       "is the control - same code path, no pretrained weights - so any gain "
+       "from `U1..U3` is unambiguously the encoder. The GPU governor is off "
+       "here (duty-cycling a datacenter card only burns quota); AMP stays on "
+       "`auto` so `utils.select_amp` picks fp16 on a T4 and skips it on a P100, "
+       "after NaN-probing the real model."),
     code(CELL_TRAIN),
     md("## 4. Collect artifacts"),
     code(CELL_COLLECT),

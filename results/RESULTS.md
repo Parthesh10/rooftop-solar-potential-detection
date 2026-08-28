@@ -90,10 +90,14 @@ Locally (~2.5 h, batch 4 to stay inside 4 GB):
 
 ## Next
 
-1. **Pretrained encoders** (`segmentation_models_pytorch`, U-Net++/ResNet34 or
-   EfficientNet-B0). The remaining gap to published Inria work is mostly here —
-   training a 14.8 M-parameter U-Net from scratch on 420 tiles is the binding
-   constraint, not the loss recipe. Needs Kaggle; will not fit in 4 GB.
+1. **Pretrained encoders** — *wired, ready to run.* `model/registry.py` builds
+   the verbatim U-Net plus `segmentation_models_pytorch` architectures;
+   `scripts/train_swiss.py --arch/--encoder/--encoder-weights` selects one and
+   auto-switches to ImageNet normalisation. The Kaggle notebook now sweeps four:
+   scratch U-Net (control), U-Net+ResNet34, U-Net+++EfficientNet-B0,
+   DeepLabV3++EfficientNet-B2. A 2-epoch local sanity run (ResNet34) reached
+   train IoU 0.44 / val 0.39 — learning far faster than the scratch net.
+   `git push` then `kaggle kernels push`.
 2. **Threshold sweep.** Everything above uses 0.5. Recall (0.777) far exceeds
    precision (0.655), so a higher threshold may buy IoU for free — this costs
    one evaluation pass, no retraining.

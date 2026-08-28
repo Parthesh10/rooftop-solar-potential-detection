@@ -35,7 +35,7 @@ import torchvision.transforms.functional as TF
 from PIL import Image
 
 from config import DEFAULT_STATS_KEY, REPO_ROOT, SIZE_DIVISOR, norm_stats
-from model.unet import UNet
+from model.registry import build_model
 from utils import get_device, pad_to_multiple, unpad
 
 __all__ = [
@@ -153,14 +153,15 @@ def load_model(
     manifest = manifest if manifest is not None else load_manifest()
     entry = _entry_for(ckpt, manifest)
 
-    arch = entry.get("arch", "unet")
-    if arch != "unet":
-        raise NotImplementedError(f"manifest requests arch={arch!r}, only 'unet' is built in")
-
-    model = UNet(
-        n_channels=entry.get("in_channels", 3),
-        n_classes=entry.get("out_channels", 1),
-        bilinear=entry.get("bilinear", False),
+    # encoder_weights is forced to None here: the full state is about to be
+    # loaded from the checkpoint, so pulling pretrained weights first would just
+    # be a wasted download.
+    model = build_model(
+        arch=entry.get("arch", "unet"),
+        encoder=entry.get("encoder", "scratch"),
+        encoder_weights=None,
+        in_channels=entry.get("in_channels", 3),
+        classes=entry.get("out_channels", 1),
     ).to(device)
 
     state = torch.load(ckpt, map_location=device, weights_only=True)

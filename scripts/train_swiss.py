@@ -49,7 +49,7 @@ from torch.utils.data import DataLoader
 from config import TrainConfig
 from evaluate import evaluate
 from loss.losses import build_loss
-from model.unet import UNet
+from model.registry import build_model, model_spec, recommended_stats_key
 from process_data.data_loader import DataLoaderSegmentation
 from train.train import build_optimizer, build_scheduler, training_model
 from utils import count_parameters, get_device, seed_torch
@@ -93,6 +93,17 @@ def main() -> None:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--splits", default="data/splits")
     ap.add_argument("--data-root", default="data")
+    ap.add_argument("--arch", default="unet",
+                    help="'unet' (scratch), 'unet++', 'deeplabv3+', 'manet', ... "
+                         "see model/registry.SMP_ARCHS (default: unet)")
+    ap.add_argument("--encoder", default="scratch",
+                    help="'scratch' for the verbatim 2023 U-Net, or an smp encoder "
+                         "name such as 'resnet34' / 'efficientnet-b0' (default: scratch)")
+    ap.add_argument("--encoder-weights", default=None,
+                    help="'imagenet' to pull pretrained encoder weights (default: none)")
+    ap.add_argument("--stats-key", default=None,
+                    help="normalisation constants (config.NORM_STATS). Default: "
+                         "'imagenet' for a pretrained encoder, else 'all'")
     ap.add_argument("--epochs", type=int, default=80)
     ap.add_argument("--batch-size", type=int, default=4)
     ap.add_argument("--lr", type=float, default=3e-4)
@@ -129,13 +140,16 @@ def main() -> None:
                     help="disable the live progress bar (for piping to a log file)")
     args = ap.parse_args()
 
+    stats_key = args.stats_key or recommended_stats_key(args.encoder, args.encoder_weights)
+
     cfg = TrainConfig(
+        arch=args.arch, encoder=args.encoder, encoder_weights=args.encoder_weights,
         epochs=args.epochs, batch_size=args.batch_size, lr=args.lr, crop=args.crop,
         num_workers=args.workers, amp=("off" if args.no_amp else args.amp),
         seed=args.seed,
         early_stop_patience=args.patience, wandb=args.wandb,
         pos_weight=args.pos_weight, dice_weight=args.dice_weight,
-        wandb_project="rooftop-solar", stats_key="all",
+        wandb_project="rooftop-solar", stats_key=stats_key,
         gpu_mem_fraction=args.gpu_mem_fraction or None,
         gpu_util_target=(args.gpu_util_target if args.gpu_util_target < 100 else None),
         gpu_temp_limit=args.gpu_temp_limit or None,
@@ -169,8 +183,14 @@ def main() -> None:
     batch_size = args.batch_size
     ds, loaders = build_loaders(cfg, Path(args.splits), Path(args.data_root), batch_size)
 
-    model = UNet(3, 1, False).to(device)
-    print(f"model:  UNet, {count_parameters(model):,} trainable parameters")
+    def make_model():
+        return build_model(cfg.arch, cfg.encoder, cfg.encoder_weights).to(device)
+
+    model = make_model()
+    enc = "scratch" if cfg.encoder in (None, "scratch") else (
+        f"{cfg.encoder} ({cfg.encoder_weights or 'random init'})")
+    print(f"model:  {cfg.arch} / {enc}, norm='{cfg.stats_key}', "
+          f"{count_parameters(model):,} trainable parameters")
 
     loss_fn = build_loss(cfg, loader=loaders["train"], device=device)
     optimizer = build_optimizer(model, cfg)
@@ -195,7 +215,7 @@ def main() -> None:
             cfg.batch_size = batch_size
             ds, loaders = build_loaders(cfg, Path(args.splits), Path(args.data_root),
                                         batch_size)
-            model = UNet(3, 1, False).to(device)
+            model = make_model()
             loss_fn = build_loss(cfg, loader=loaders["train"], device=device)
             optimizer = build_optimizer(model, cfg)
             scheduler = build_scheduler(optimizer, cfg,
@@ -222,7 +242,10 @@ def main() -> None:
         "best_val_iou": history.best_val_iou,
         "best_epoch": history.best_epoch,
         "epochs_run": len(history.epochs),
-        "config": {"pos_weight": cfg.pos_weight, "dice_weight": cfg.dice_weight,
+        "model": model_spec(cfg.arch, cfg.encoder, cfg.encoder_weights),
+        "config": {"arch": cfg.arch, "encoder": cfg.encoder,
+                   "encoder_weights": cfg.encoder_weights, "stats_key": cfg.stats_key,
+                   "pos_weight": cfg.pos_weight, "dice_weight": cfg.dice_weight,
                    "lr": cfg.lr, "batch_size": cfg.batch_size,
                    "epochs": cfg.epochs, "patience": cfg.early_stop_patience},
         "metrics": {k: {m: float(v[m]) for m in
