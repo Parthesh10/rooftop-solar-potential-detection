@@ -1,0 +1,16 @@
+{
+  "id": "partheshgupta/rooftop-solar-inria-training",
+  "title": "Rooftop Solar Inria Training",
+  "code_file": "kaggle_inria_train.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_tpu": false,
+  "enable_internet": true,
+  "dataset_sources": ["sagar100rathod/inria-aerial-image-labeling-dataset"],
+  "competition_sources": [],
+  "kernel_sources": [],
+  "model_sources": [],
+  "machine_shape": "gpuT4x2"
+}

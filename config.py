@@ -106,6 +106,11 @@ class TrainConfig:
     batch_size: int = 4
     num_workers: int = 0  # >0 needs `if __name__ == "__main__"` guarding on Windows
 
+    # Inria windowed sampling (scripts/train_inria.py). Ignored by train_swiss.
+    samples_per_tile: int = 32   # windows drawn per 5000² tile per epoch
+    min_positive: float = 0.005  # reject windows below this building-pixel fraction
+    empty_ratio: float = 0.1     # ...but let this fraction of empty windows through
+
     # optimisation — F-09: was Adam @ lr=0.01 with a gamma=1 (no-op) scheduler.
     epochs: int = 80
     lr: float = 3e-4
