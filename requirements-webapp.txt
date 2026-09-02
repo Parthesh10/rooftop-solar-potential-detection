@@ -1,0 +1,21 @@
+# Serving dependencies for webapp/ — deliberately NOT the training stack.
+#
+#   pip install -r requirements-webapp.txt
+#   python -m webapp
+#
+# Notably absent: torch and segmentation-models-pytorch (~2.5 GB installed).
+# The app runs the exported ONNX graph, so onnxruntime (~50 MB) is all it needs.
+# webapp/inference.py will fall back to torch if no .onnx is present, but that
+# path exists for development convenience, not for deployment.
+
+fastapi==0.121.2
+uvicorn[standard]==0.41.0
+onnxruntime==1.24.1     # CPU. Swap for onnxruntime-gpu if a CUDA card is present.
+pyproj==3.8.1           # geodesic area on WGS84 — never measure area in Mercator
+httpx==0.28.1           # async tile fetching + PVGIS
+numpy==2.4.4
+pillow==12.2.0
+opencv-python==5.0.0.93 # mask -> contours -> simplified polygons
+
+# Only needed to (re-)export the model — not to serve it:
+#   torch, segmentation-models-pytorch, onnx

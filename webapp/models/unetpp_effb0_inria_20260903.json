@@ -1,0 +1,46 @@
+{
+  "name": "unetpp_effb0_inria_20260903",
+  "onnx": "unetpp_effb0_inria_20260903.onnx",
+  "source_checkpoint": "unetpp_effb0_inria_20260903.pt",
+  "arch": "unet++",
+  "encoder": "efficientnet-b0",
+  "in_channels": 3,
+  "out_channels": 1,
+  "window": 512,
+  "stride": 256,
+  "threshold": 0.5,
+  "stats_key": "imagenet",
+  "mean": [
+    0.485,
+    0.456,
+    0.406
+  ],
+  "std": [
+    0.229,
+    0.224,
+    0.225
+  ],
+  "output": "logits",
+  "gsd_m_per_px": 0.3,
+  "serving_zoom": 19,
+  "label_semantics": "building-footprint",
+  "trained_on": "inria-official",
+  "metrics": {
+    "harness": "evaluate.py, model.eval() on (F-03), no empty-tile inversion (F-08)",
+    "measured": "2026-09-03",
+    "splits": "Inria official protocol \u2014 tiles 1-5 per city held out (25 val tiles, 2025 windows)",
+    "val": {
+      "iou": 0.7233,
+      "f1": 0.818,
+      "accuracy": 0.9634,
+      "precision": 0.8226,
+      "recall": 0.8568
+    }
+  },
+  "limitations": [
+    "Trained on five Western cities only: austin, chicago, kitsap (WA), tyrol-w, vienna.",
+    "Untested on dense low-rise Indian, African or East-Asian rooftops.",
+    "Expects ~0.3 m/px imagery; serve at Web Mercator z=19."
+  ],
+  "opset": 17
+}

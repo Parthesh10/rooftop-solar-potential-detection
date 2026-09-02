@@ -39,3 +39,7 @@ data/splits/
 kaggle_out/
 kaggle_logs/
 kaggle_check/
+
+# Web app runtime artefacts
+webapp/.cache/
+kaggle_inria_out/
