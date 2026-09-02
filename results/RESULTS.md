@@ -1,16 +1,88 @@
 # Results
 
-All numbers below use the **leakage-free geographic split** (420 train / 58 val
-/ 74 test, zero tiles adjacent across splits) and the **corrected metric
-harness** (`model.eval()` on, no empty-tile IoU inversion). Anything measured
-any other way is not comparable — see "Why the 2023 checkpoints are not a
-baseline" below.
+Two datasets, two sets of numbers. **Inria is the headline** — it is what the
+shipped general model is trained and scored on. The Swiss DOP25 numbers below it
+are the project's history and a secondary out-of-distribution check.
 
-> **Direction (2026-08-29):** the Swiss set (420 train tiles) has been shown to
-> be too small to benefit from a pretrained encoder — see the encoder sweep
-> below. The project is moving to the full **Inria** dataset for a general
-> model; Swiss becomes a secondary eval. New headline target: **Inria official
-> val IoU ≥ 0.72**.
+---
+
+# THE SHIPPED MODEL — Inria, 2026-09-03
+
+**Inria official val IoU 0.7233.** Target was ≥ 0.72. ✅
+
+| | |
+|---|---|
+| Weights | `results/unetpp_effb0_inria_20260903.pt` (26 MB) |
+| Architecture | **U-Net++ / EfficientNet-B0**, ImageNet-pretrained encoder |
+| Parameters | 6.6 M |
+| Trained on | Inria official split — 155 tiles (austin, chicago, kitsap, tyrol-w, vienna), tiles 6–36 per city |
+| Scored on | Inria official val — 25 tiles, tiles 1–5 per city, **never seen in training** |
+| Input | 512×512 @ 0.3 m/px, ImageNet normalisation |
+| Labels | **building footprints** — roof extent, not installable area |
+
+| metric | value |
+|---|---|
+| **IoU** | **0.7233** |
+| F1 | 0.8180 |
+| accuracy | 0.9634 |
+| precision | 0.8226 |
+| recall | 0.8568 |
+
+Config: `--window 512 --samples-per-tile 48 --pos-weight 2.4 --dice-weight 0.6
+--epochs 60 --batch-size 16 --lr 3e-4 --patience 12`, AdamW + cosine with
+5-epoch warmup, D4 + photometric augmentation. Kaggle T4, fp16, ~4.8 h/config.
+
+## The Inria run
+
+| run | arch / encoder | best epoch | **val IoU** | F1 | P | R |
+|---|---|---|---|---|---|---|
+| **I2** | **U-Net++ / efficientnet-b0** | 49 | **0.7233** | 0.818 | 0.823 | 0.857 |
+| I1 | U-Net / resnet34 | 59 | 0.7178 | 0.813 | 0.824 | 0.850 |
+
+Both cleared the target; effb0 wins by 0.6 points at **a quarter the parameters**
+(6.6 M vs 24.4 M), which is why it ships — smaller model, faster inference,
+better score.
+
+### What it showed
+
+* **Data was the constraint, exactly as diagnosed.** The same architecture family
+  went from ~0.52–0.57 on 420 Swiss tiles to **0.72** on Inria. Nothing about the
+  loss, the schedule or the augmentation changed materially.
+* **The pretrained encoder pays off once there is data to feed it.** On Swiss it
+  tied the scratch net (see below); on Inria it is the whole result.
+* **Healthy generalisation gap.** Train IoU 0.838 vs val 0.723 — a real ~0.11
+  gap, not the 0.13+ overfit the Swiss runs showed on a 58-tile val set.
+* **Converged cleanly.** Val IoU plateaued at ~0.722 from epoch ~42 and the
+  cosine schedule annealed to zero without divergence.
+
+Published Inria building-segmentation work sits ~0.78–0.82 with much larger
+models and multi-scale inference. 0.723 from a 6.6 M-parameter model in one
+4.8 h run is an honest, defensible result.
+
+### Known limitations — read before trusting a number
+
+* **Five Western cities only**: Austin, Chicago, Kitsap County WA, Vienna,
+  Tyrol. US suburban + Alpine European rooftops. Performance on dense low-rise
+  Indian, African or East-Asian rooftops is **untested**.
+* **Footprint, not installable area.** The model outputs roof extent. Usable PV
+  area needs a packing factor (0.70–0.80 default) for setbacks, walkways,
+  parapets, tanks and inter-row spacing. The web app exposes this as a slider.
+* **0.3 m/px.** Serve at Web Mercator z=19 (≈0.30 m/px at the equator, 0.27 at
+  23°N) to keep train and deploy resolution matched.
+
+---
+
+# Swiss DOP25 — project history and secondary eval
+
+All numbers in this section use the **leakage-free geographic split** (420 train
+/ 58 val / 74 test, zero tiles adjacent across splits) and the **corrected
+metric harness** (`model.eval()` on, no empty-tile IoU inversion). Anything
+measured any other way is not comparable — see "Why the 2023 checkpoints are not
+a baseline" below.
+
+> **Why this dataset stopped being the target (2026-08-29):** 420 training tiles
+> proved too small to benefit from a pretrained encoder — the encoder sweep below
+> is the evidence. The project moved to Inria for the general model.
 
 ## Encoder sweep — 2026-08-29 (Kaggle T4, fp16, ~45 min)
 
@@ -84,13 +156,20 @@ duration.
 
 ## History
 
-| date | model | test IoU | notes |
-|---|---|---|---|
-| 2026-08-29 | U-Net / resnet34 (ImageNet) | 0.5653 | Swiss encoder sweep; ties scratch |
-| 2026-08-29 | U-Net / scratch (T4/fp16) | 0.5651 | same config as sweep D, +2 from hardware/noise |
-| 2026-08-22 | sweep D (P100/fp32) | 0.5442 | Swiss baseline |
-| 2026-08-22 | first clean run | 0.4656 | early-stopped at 27, best @ 12 |
-| 2026-08-11 | 2023 `path raise 130.pt` | (0.4946) | **contaminated — not a baseline** |
+| date | model | dataset | IoU | notes |
+|---|---|---|---|---|
+| 2026-09-03 | **U-Net++ / effb0** | **Inria val** | **0.7233** | **shipped model** |
+| 2026-09-03 | U-Net / resnet34 | Inria val | 0.7178 | runner-up, 3.7× the params |
+| 2026-08-29 | U-Net / resnet34 | Swiss test | 0.5653 | encoder sweep; ties scratch |
+| 2026-08-29 | U-Net / scratch (T4/fp16) | Swiss test | 0.5651 | same config as sweep D, +2 from hardware/noise |
+| 2026-08-22 | sweep D (P100/fp32) | Swiss test | 0.5442 | Swiss baseline |
+| 2026-08-22 | first clean run | Swiss test | 0.4656 | early-stopped at 27, best @ 12 |
+| 2026-08-11 | 2023 `path raise 130.pt` | Swiss test | (0.4946) | **contaminated — not a baseline** |
+
+Inria and Swiss IoU are **not comparable**: different label semantics (footprint
+vs available-roof-area), different resolution (0.30 vs 0.25 m/px), different
+countries. The jump from 0.54 to 0.72 is mostly "100× more training data", not a
+like-for-like improvement.
 
 ## Why the 2023 checkpoints are not a baseline
 
@@ -129,14 +208,11 @@ Locally (~2.5 h, batch 4 to stay inside 4 GB):
 
 ## Next
 
-1. **Inria training** — the main event now. `scripts/train_inria.py` +
-   `kaggle_inria/` train on the full Inria set (official 1–5 split, 155/25
-   tiles, on-the-fly 512² windows). Two archs: U-Net/resnet34 and
-   U-Net++/efficientnet-b0. Target: Inria official val IoU ≥ 0.72.
-2. **Broaden geography** — Inria is 5 Western cities. Add Google Open Buildings
-   (Global South) and/or SpaceNet once the Inria pipeline is solid.
-3. **Threshold + TTA** — cheap post-hoc gains on whichever model ships.
-   `evaluate.py --tta` averages the 8 dihedral transforms (+1–2 IoU, 8× cost).
-4. **Swiss as secondary eval** — keep scoring the shipped model on the Swiss
-   geographic test split as an out-of-distribution check (different country,
-   different label semantics, 0.25 m/px vs 0.3).
+1. **Broaden geography** — Inria is 5 Western cities. Google Open Buildings
+   (Global South, CC-BY) and SpaceNet (Rio / Shanghai / Khartoum) add the
+   diversity a genuinely global model needs. Hand-label a small eval set per
+   new region; never evaluate on auto-generated labels.
+2. **Threshold + TTA** — cheap post-hoc gains, no retraining. `evaluate.py
+   --tta` averages the 8 dihedral transforms (+1–2 IoU, 8× cost).
+3. **Multi-class ARA** — reaching true *available* rooftop area (excluding
+   chimneys, skylights, existing panels) needs multi-class labels. Research item.

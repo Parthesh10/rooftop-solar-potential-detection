@@ -1,0 +1,80 @@
+[
+  {
+    "run": "I1_unet_rn34",
+    "dataset": "inria-official",
+    "best_val_iou": 0.7177919132130984,
+    "best_epoch": 59,
+    "epochs_run": 60,
+    "model": {
+      "arch": "unet",
+      "encoder": "resnet34",
+      "encoder_weights": "imagenet",
+      "in_channels": 3,
+      "out_channels": 1,
+      "bilinear": false,
+      "stats_key": "imagenet"
+    },
+    "config": {
+      "arch": "unet",
+      "encoder": "resnet34",
+      "encoder_weights": "imagenet",
+      "stats_key": "imagenet",
+      "window": 512,
+      "samples_per_tile": 48,
+      "pos_weight": 2.4,
+      "dice_weight": 0.6,
+      "lr": 0.0003,
+      "batch_size": 16,
+      "epochs": 60,
+      "patience": 12
+    },
+    "metrics": {
+      "val": {
+        "iou": 0.7177919132130984,
+        "f1": 0.8133450687046749,
+        "accuracy": 0.9622879047158324,
+        "precision": 0.8237735116705637,
+        "recall": 0.8496904141558255
+      }
+    }
+  },
+  {
+    "run": "I2_unetpp_effb0",
+    "dataset": "inria-official",
+    "best_val_iou": 0.7233243347515673,
+    "best_epoch": 49,
+    "epochs_run": 60,
+    "model": {
+      "arch": "unet++",
+      "encoder": "efficientnet-b0",
+      "encoder_weights": "imagenet",
+      "in_channels": 3,
+      "out_channels": 1,
+      "bilinear": false,
+      "stats_key": "imagenet"
+    },
+    "config": {
+      "arch": "unet++",
+      "encoder": "efficientnet-b0",
+      "encoder_weights": "imagenet",
+      "stats_key": "imagenet",
+      "window": 512,
+      "samples_per_tile": 48,
+      "pos_weight": 2.4,
+      "dice_weight": 0.6,
+      "lr": 0.0003,
+      "batch_size": 16,
+      "epochs": 60,
+      "patience": 12
+    },
+    "metrics": {
+      "val": {
+        "iou": 0.7233243347515673,
+        "f1": 0.8179789407467678,
+        "accuracy": 0.9634050289201148,
+        "precision": 0.8225630009905376,
+        "recall": 0.8567705233419232
+      }
+    }
+  }
+]
