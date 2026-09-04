@@ -65,8 +65,29 @@ def _resolve_inria_root(root: Path) -> Path:
     )
 
 
+def _extra_tile_dataset(extra_dir: Path, cfg: TrainConfig, ignore_value: int | None):
+    """Paired image/label tiles to train alongside Inria.
+
+    Only sound when the extra labels are *footprints*, like Inria's. Mixing in
+    cluster-envelope labels would teach the model two different answers to
+    "where does a roof end" and it would learn neither — which is exactly why
+    the Indian tiles are relabelled from OpenStreetMap
+    (scripts/build_osm_labels.py) rather than used as hand-drawn.
+    """
+    from process_data.data_loader import DataLoaderSegmentation
+
+    imgs = sorted((extra_dir / "images").glob("*.png"))
+    if not imgs:
+        raise SystemExit(f"no .png tiles in {extra_dir / 'images'}")
+    return DataLoaderSegmentation.from_files(
+        imgs, augment=True, crop=cfg.crop, stats_key=cfg.stats_key,
+        mask_suffix="_label", ignore_value=ignore_value)
+
+
 def build_inria_loaders(cfg: TrainConfig, inria_root: Path, batch_size: int,
-                        val_stride: int):
+                        val_stride: int, extra_dir: Path | None = None,
+                        extra_ignore_value: int | None = None,
+                        extra_repeat: int = 1):
     root = _resolve_inria_root(Path(inria_root))
     img_files = sorted((root / "images").glob("*.tif"))
     if not img_files:
@@ -88,6 +109,19 @@ def build_inria_loaders(cfg: TrainConfig, inria_root: Path, batch_size: int,
     )
     print(f"  train  {train_ds}")
     print(f"  val    {val_ds}")
+
+    if extra_dir is not None:
+        from torch.utils.data import ConcatDataset
+
+        extra = _extra_tile_dataset(Path(extra_dir), cfg, extra_ignore_value)
+        # Inria contributes ~7.4k windows an epoch against ~100 extra tiles, so
+        # without repetition the new region is 1.3% of the gradient and changes
+        # nothing. Repeating is the cheap way to weight it; it is not the same
+        # as having more data, and it will overfit those tiles if pushed far.
+        parts = [train_ds] + [extra] * max(int(extra_repeat), 1)
+        train_ds = ConcatDataset(parts)
+        print(f"  extra  {len(extra)} tiles x{extra_repeat} "
+             f"-> combined train size {len(train_ds)}")
 
     loaders = {
         "train": DataLoader(
@@ -140,6 +174,16 @@ def main() -> None:
     ap.add_argument("--resume", nargs="?", const="auto", default=None, metavar="RUN",
                     help="resume the newest run with a state.pt, or a named run dir")
     ap.add_argument("--wandb", action="store_true")
+    ap.add_argument("--extra-data-dir", default=None,
+                    help="directory of images/ + labels/ tiles to train "
+                        "alongside Inria. Their labels MUST be building "
+                        "footprints, like Inria's")
+    ap.add_argument("--extra-ignore-value", type=int, default=None,
+                    help="grey level meaning 'unknown' in the extra labels "
+                        "(128 for scripts/build_osm_labels.py output)")
+    ap.add_argument("--extra-repeat", type=int, default=1,
+                    help="how many times to repeat the extra tiles per epoch; "
+                        "Inria otherwise drowns them out")
     ap.add_argument("--gpu-mem-fraction", type=float, default=0.9)
     ap.add_argument("--gpu-util-target", type=float, default=80.0)
     ap.add_argument("--gpu-temp-limit", type=float, default=78.0)
@@ -182,7 +226,11 @@ def main() -> None:
 
     print("datasets:")
     batch_size = args.batch_size
-    ds, loaders = build_inria_loaders(cfg, args.inria_root, batch_size, args.val_stride)
+    ds, loaders = build_inria_loaders(
+        cfg, args.inria_root, batch_size, args.val_stride,
+        extra_dir=args.extra_data_dir,
+        extra_ignore_value=args.extra_ignore_value,
+        extra_repeat=args.extra_repeat)
 
     n_gpus = torch.cuda.device_count() if device.type == "cuda" else 0
     use_dp = args.data_parallel and n_gpus > 1
@@ -228,8 +276,11 @@ def main() -> None:
             print(f"\n[oom] retrying with batch_size={batch_size}\n")
             torch.cuda.empty_cache()
             cfg.batch_size = batch_size
-            ds, loaders = build_inria_loaders(cfg, args.inria_root, batch_size,
-                                              args.val_stride)
+            ds, loaders = build_inria_loaders(
+                cfg, args.inria_root, batch_size, args.val_stride,
+                extra_dir=args.extra_data_dir,
+                extra_ignore_value=args.extra_ignore_value,
+                extra_repeat=args.extra_repeat)
             model = make_model()
             loss_fn = build_loss(cfg, loader=loaders["train"], device=device)
             optimizer = build_optimizer(model, cfg)

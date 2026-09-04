@@ -20,7 +20,32 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-__all__ = ["DiceLoss", "TverskyLoss", "ComboLoss", "compute_pos_weight", "build_loss"]
+__all__ = ["DiceLoss", "TverskyLoss", "ComboLoss", "compute_pos_weight",
+           "build_loss", "IGNORE_INDEX", "split_targets"]
+
+
+# Targets are {0, 1} normally. A third state is needed when a pixel's label is
+# genuinely unknown rather than negative — see scripts/build_osm_labels.py,
+# where OpenStreetMap supplies the positives and a hand-drawn envelope marks
+# the surrounding area as "roof or alley, we cannot tell". Calling those pixels
+# background would teach the model that real rooftops are background, which is
+# the exact failure being fixed.
+#
+# Encoded in the target tensor rather than passed as a fourth argument, so the
+# training loop's ``loss_fn(outputs, labels)`` call is unchanged and every
+# existing two-state dataset behaves exactly as before.
+IGNORE_INDEX = -1.0
+
+
+def split_targets(targets: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    """``targets`` -> ``(clean_targets, valid_mask)``.
+
+    Ignored pixels are zeroed in ``clean_targets`` so they cannot contribute a
+    gradient, and marked False in ``valid_mask`` so they are excluded from every
+    average.
+    """
+    valid = targets >= 0
+    return targets * valid, valid
 
 
 class DiceLoss(nn.Module):
@@ -35,6 +60,11 @@ class DiceLoss(nn.Module):
         probs = torch.sigmoid(inputs) if self.from_logits else inputs
         probs = probs.reshape(probs.shape[0], -1)
         targets = targets.reshape(targets.shape[0], -1).to(probs.dtype)
+        targets, valid = split_targets(targets)
+        # Masking the *probabilities* is what keeps an ignored pixel out of the
+        # denominator: zeroing only the target would still penalise a positive
+        # prediction there as a false positive.
+        probs = probs * valid
         inter = (probs * targets).sum(dim=1)
         denom = probs.sum(dim=1) + targets.sum(dim=1)
         dice = (2 * inter + self.smooth) / (denom + self.smooth)
@@ -60,8 +90,10 @@ class TverskyLoss(nn.Module):
         probs = torch.sigmoid(inputs) if self.from_logits else inputs
         probs = probs.reshape(probs.shape[0], -1)
         targets = targets.reshape(targets.shape[0], -1).to(probs.dtype)
+        targets, valid = split_targets(targets)
+        probs = probs * valid
         tp = (probs * targets).sum(dim=1)
-        fp = (probs * (1 - targets)).sum(dim=1)
+        fp = (probs * (1 - targets) * valid).sum(dim=1)
         fn = ((1 - probs) * targets).sum(dim=1)
         tversky = (tp + self.smooth) / (tp + self.alpha * fp + self.beta * fn + self.smooth)
         return 1.0 - tversky.mean()
@@ -87,9 +119,20 @@ class ComboLoss(nn.Module):
 
     def forward(self, inputs: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
         targets = targets.to(inputs.dtype)
-        bce = F.binary_cross_entropy_with_logits(
-            inputs, targets, pos_weight=self.pos_weight
-        )
+        clean, valid = split_targets(targets)
+
+        if bool(valid.all()):
+            bce = F.binary_cross_entropy_with_logits(
+                inputs, clean, pos_weight=self.pos_weight)
+        else:
+            # Average over the valid pixels only. Reducing over everything and
+            # dividing by numel would quietly shrink the loss in proportion to
+            # how much of the tile was ignored.
+            per_px = F.binary_cross_entropy_with_logits(
+                inputs, clean, pos_weight=self.pos_weight, reduction="none")
+            denom = valid.sum().clamp(min=1)
+            bce = (per_px * valid).sum() / denom
+
         if self.dice_weight <= 0:
             return bce
         return (1.0 - self.dice_weight) * bce + self.dice_weight * self.region(inputs, targets)
@@ -110,7 +153,7 @@ def compute_pos_weight(loader, max_batches: int | None = 50, device=None) -> flo
         if device is not None:
             labels = labels.to(device)
         pos += int((labels > 0.5).sum().item())
-        total += int(labels.numel())
+        total += int((labels >= 0).sum().item())   # ignored pixels are not data
     if pos == 0:
         raise ValueError(
             "No positive pixels found while estimating pos_weight — check that "

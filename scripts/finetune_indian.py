@@ -54,14 +54,39 @@ from utils import count_parameters, get_device, seed_torch
 MIN_TILES = 20   # below this a train/val split and a loss estimate are noise
 
 
-def split_files(images_dir: Path, val_fraction: float, seed: int
+def split_files(images_dir: Path, val_fraction: float, seed: int,
+                holdout_prefix: str | None = None
                 ) -> tuple[list[Path], list[Path]]:
+    """Train/val split.
+
+    ``holdout_prefix`` reserves a whole AOI for validation instead of sampling
+    randomly. That matters here: tiles inside one AOI overlap in built form and
+    often in imagery date, so a random split leaks — the same failure mode that
+    made every 2023 Swiss number untrustworthy (CLAUDE.md fact 6). Holding out
+    an entire AOI also keeps the CV Raman Nagar benchmark honest, because that
+    block sits inside ``bangalore_cvraman_a``.
+    """
     files = sorted(images_dir.glob("*.png"))
     if len(files) < MIN_TILES:
         raise SystemExit(
             f"only {len(files)} labelled tiles in {images_dir} (need at least "
             f"{MIN_TILES}). Label more with labelme first — see "
             f"finetune/README.md.")
+
+    if holdout_prefix:
+        val = [f for f in files if f.stem.startswith(holdout_prefix)]
+        train = [f for f in files if not f.stem.startswith(holdout_prefix)]
+        if not val:
+            raise SystemExit(
+                f"--holdout-aoi {holdout_prefix!r} matched no tiles. Available "
+                f"prefixes: "
+                f"{sorted({f.stem.rsplit('_', 1)[0] for f in files})}")
+        if len(train) < MIN_TILES:
+            raise SystemExit(
+                f"holding out {holdout_prefix!r} leaves only {len(train)} "
+                f"training tiles (need {MIN_TILES})")
+        return train, val
+
     rng = random.Random(seed)
     shuffled = files[:]
     rng.shuffle(shuffled)
@@ -120,6 +145,16 @@ def main() -> None:
                         "over-predicted at ~5.9")
     ap.add_argument("--dice-weight", type=float, default=0.6)
     ap.add_argument("--val-fraction", type=float, default=0.15)
+    ap.add_argument("--holdout-aoi", default=None,
+                    help="reserve every tile whose name starts with this "
+                        "prefix for validation, instead of a random split. "
+                        "Tiles within one AOI overlap in built form, so a "
+                        "random split leaks (CLAUDE.md fact 6)")
+    ap.add_argument("--ignore-value", type=int, default=None,
+                    help="grey level in the mask meaning 'unknown' (128 for "
+                        "the masks scripts/build_osm_labels.py writes). Those "
+                        "pixels are dropped from the loss rather than treated "
+                        "as background")
     ap.add_argument("--patience", type=int, default=8)
     ap.add_argument("--workers", type=int, default=0)
     ap.add_argument("--amp", default="auto", choices=["auto", "fp16", "bf16", "off"])
@@ -147,8 +182,9 @@ def main() -> None:
 
     data_dir = Path(args.data_dir)
     train_files, val_files = split_files(data_dir / "images", args.val_fraction,
-                                         args.seed)
-    print(f"labelled tiles: {len(train_files)} train / {len(val_files)} val")
+                                         args.seed, args.holdout_aoi)
+    print(f"labelled tiles: {len(train_files)} train / {len(val_files)} val"
+         + (f"  (holding out {args.holdout_aoi!r})" if args.holdout_aoi else ""))
 
     if args.crop % 32:
         raise SystemExit(f"--crop must be a multiple of 32, got {args.crop} "
@@ -157,13 +193,13 @@ def main() -> None:
     def build_loaders(batch_size: int):
         train_ds = DataLoaderSegmentation.from_files(
             train_files, augment=True, crop=args.crop, stats_key=args.stats_key,
-            mask_suffix="_label")
+            mask_suffix="_label", ignore_value=args.ignore_value)
         # Validation keeps the native 512 tile: the model is fully convolutional
         # and boundary-pads, so scoring at the serving size is both free and
         # more representative than scoring on crops.
         val_ds = DataLoaderSegmentation.from_files(
             val_files, augment=False, crop=None, stats_key=args.stats_key,
-            mask_suffix="_label")
+            mask_suffix="_label", ignore_value=args.ignore_value)
         return train_ds, val_ds, (
             DataLoader(train_ds, batch_size=batch_size, shuffle=True,
                        num_workers=args.workers,
@@ -273,6 +309,8 @@ def main() -> None:
         # alleys between merged buildings, so it is not comparable to an Inria
         # footprint IoU and it needs a lower packing factor downstream.
         "label_semantics": args.label_semantics,
+        "ignore_value": args.ignore_value,
+        "holdout_aoi": args.holdout_aoi,
         "trained_on": "hand-labelled-indian",
         "not_comparable_to": (
             "Inria pooled IoU 0.7712 — different label semantics, different "

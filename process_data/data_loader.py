@@ -90,6 +90,7 @@ class DataLoaderSegmentation(data.Dataset):
         mask_suffix: str = "_label",
         strict: bool = True,
         img_files: list[Path] | None = None,
+        ignore_value: int | None = None,
     ):
         # Two construction modes:
         #   * a directory pair (the original, for data/<split>/{images,labels})
@@ -155,6 +156,12 @@ class DataLoaderSegmentation(data.Dataset):
 
         self.stats_key = stats_key
         self.mean, self.std = norm_stats(stats_key)
+        # Opt-in tri-state masks. Left None, a mask is read exactly as before
+        # (>127 is roof, everything else is background), so no existing dataset
+        # changes behaviour. Set to the grey level that means "unknown" — 128
+        # for the masks scripts/build_osm_labels.py writes — and those pixels
+        # become loss.losses.IGNORE_INDEX instead of background.
+        self.ignore_value = ignore_value
 
     # ------------------------------------------------------------------ #
     @classmethod
@@ -232,8 +239,14 @@ class DataLoaderSegmentation(data.Dataset):
         x = TF.to_tensor(image)  # (3, H, W) in [0, 1]
         x = TF.normalize(x, mean=self.mean, std=self.std)
 
-        y = torch.from_numpy(np.array(mask, dtype=np.uint8))  # (H, W), already 'L'
-        y = (y > 127).float()
+        raw = torch.from_numpy(np.array(mask, dtype=np.uint8))  # (H, W), 'L'
+        if self.ignore_value is None:
+            return x, (raw > 127).float()
+
+        lo = self.ignore_value // 2
+        hi = (self.ignore_value + 255) // 2
+        y = (raw > hi).float()
+        y[(raw > lo) & (raw <= hi)] = -1.0     # loss.losses.IGNORE_INDEX
         return x, y
 
     # ------------------------------------------------------------------ #
