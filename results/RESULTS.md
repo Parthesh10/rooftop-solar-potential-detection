@@ -324,3 +324,89 @@ finding of no mask-to-polygon offset.
 **Do not compare 0.27 to 0.7712.** One is recall against human-mapped footprints
 in Bangalore; the other is pooled IoU on Inria val. Different metric, different
 labels, different continent.
+
+---
+
+## Fine-tuning on hand-labelled Indian tiles (2026-09-05)
+
+**The hypothesis in the previous section was right: it was a data problem, not
+a capacity one.** 80 hand-labelled tiles, ~4 minutes of training on a GTX 1650,
+and the Bangalore failure inverts.
+
+Recipe: `scripts/finetune_indian.py` — the shipped Inria checkpoint, encoder
+frozen for 5 epochs then unfrozen, lr 1e-5, pos_weight 2.4, 256px random crops,
+batch 4. Early-stopped at epoch 17 (best epoch 9), peak VRAM 1.3 GB.
+Held-out val IoU on 12 unseen Indian tiles: **0.5143**.
+
+Measured against the *same* 141 OpenStreetMap footprints in CV Raman Nagar used
+for the baseline above, at threshold 0.40:
+
+| roof size | n | recall before | recall after |
+|---|---|---|---|
+| 0–50 m² | 24 | 0.08 | **0.83** |
+| 50–100 m² | 47 | 0.17 | **0.81** |
+| 100–200 m² | 41 | 0.37 | **0.98** |
+| 200–500 m² | 13 | 0.46 | **0.92** |
+| 500+ m² | 16 | 0.44 | **0.88** |
+| **overall** | 141 | **0.27** | **0.88** |
+| **silent (<0.10)** | | **56%** | **4.3%** |
+
+Both columns are measured at the **same fixed threshold 0.40** — an earlier
+draft of this table compared each model at its own calibrated threshold, which
+flattered both sides. At 0.50 the picture is the same: overall 0.24 → 0.84.
+
+The calibration verdict moves from `needs_finetuning` to `calibrated`. The
+0–50 m² band — the confident-negative case that no threshold could reach —
+went from a median probability of **0.006 to 0.869**.
+
+### The catch: these labels are cluster envelopes, not footprints
+
+The labeller merged adjacent buildings into single polygons and did not cut out
+the alleys between them, to get through 93 tiles in reasonable time. Measured
+over the 835 drawn polygons:
+
+| | value |
+|---|---|
+| median polygon | 381 m² ≈ 6.4 houses |
+| mean polygon | 714 m² ≈ 12 houses |
+| polygons implying >20 houses | 14% |
+| largest | 15,111 m² (a whole colony block) |
+
+So the fine-tuned model predicts **built-up cluster envelopes**, and its
+predicted area on the baseline block is **+115%** (23,656 → 50,742 m²). That is
+not an error — it is what it was taught — but it has two hard consequences:
+
+1. **The packing factor must absorb it.** `model/manifest.json` records
+   `recommended_packing_factor: 0.5` for this checkpoint against 0.70–0.75 for
+   the footprint model. Serving it without that change roughly doubles every
+   kWh and money figure.
+2. **Its building *count* is meaningless**, and its Inria IoU is not comparable
+   with 0.7712.
+
+### Inria regression check
+
+Same 5 Inria val tiles, threshold 0.50:
+
+| model | IoU | F1 | precision | recall |
+|---|---|---|---|---|
+| shipped (footprints) | **0.7996** | 0.8886 | 0.8756 | 0.9020 |
+| fine-tuned (envelopes) | 0.6540 | 0.7908 | 0.7010 | 0.9072 |
+
+**Recall is unchanged (0.902 → 0.907); precision falls (0.876 → 0.701).** That
+is the exact signature of an envelope model scored against footprint labels —
+it covers the buildings and then some. It is *not* catastrophic forgetting: the
+model did not stop finding buildings, it started outlining them differently.
+
+Because of that regression on Western imagery, the fine-tuned checkpoint is
+**not** the default. `webapp/models/` now holds both, the sidecar marked
+`"default": true` wins regardless of file age, and
+`RSOLAR_MODEL=finetune_indian` serves the Indian one.
+
+### What would settle it
+
+The open question is whether a model can be good at both. Joint training on
+Inria footprints plus Indian tiles is the obvious next run, but the two label
+sets disagree about what a "roof" is, so mixing them teaches a contradiction.
+Either relabel a subset of the Indian tiles per-building, or train a
+two-headed model. That design question is unresolved and worth more than a
+speculative GPU run.

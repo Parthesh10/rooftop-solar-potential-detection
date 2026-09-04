@@ -22,6 +22,15 @@ REPO_ROOT = WEBAPP_ROOT.parent
 MODELS_DIR = WEBAPP_ROOT / "models"
 CACHE_DIR = Path(os.environ.get("RSOLAR_CACHE", WEBAPP_ROOT / ".cache"))
 
+# Which exported model to serve, by file stem (no extension). Empty = pick the
+# one whose sidecar says "default": true, else the newest .onnx.
+#
+# This exists because "newest wins" is a booby trap once more than one model is
+# exported: dropping a specialised checkpoint into models/ would silently
+# replace the general one for every user, and the symptom (every area estimate
+# doubles) looks nothing like the cause.
+SERVED_MODEL = os.environ.get("RSOLAR_MODEL", "").strip()
+
 
 # --------------------------------------------------------------------------- #
 # Imagery

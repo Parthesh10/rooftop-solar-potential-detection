@@ -47,8 +47,12 @@ tile count for anything you add; if it errors, shrink the box.
 
 ```powershell
 pip install labelme
-labelme data/finetune_candidates/images --output data/finetune_candidates/images --nodata
+labelme data/finetune_candidates/images --output data/finetune_candidates/images
 ```
+
+(Older labelme took a `--nodata` flag to keep the image out of the JSON. Newer
+versions removed it — that is now the default, and `--with-image-data` is the
+opt-in. `labelme_to_masks.py` handles either.)
 
 Draw one polygon per rooftop, label it `building` (labelme's default single
 class is fine — it doesn't matter what you type as long as it isn't one of
@@ -137,3 +141,53 @@ CC-BY, ~1.8B footprints across the Global South) being worth the larger
 investment. If it doesn't move much, that argues architecture or resolution is
 the real constraint, not sample count — worth knowing before committing to a
 much bigger labelling effort.
+
+---
+
+## What actually happened (2026-09-05)
+
+Run once, for real: 93 tiles labelled, 80 with usable polygons, ~4 minutes of
+training on a GTX 1650. Against the same 141 OpenStreetMap footprints as the
+baseline, both models at a fixed threshold of 0.40:
+
+| roof size | n | recall before | recall after |
+|---|---|---|---|
+| 0–50 m² | 24 | 0.08 | **0.83** |
+| 50–100 m² | 47 | 0.17 | **0.81** |
+| 100–200 m² | 41 | 0.37 | **0.98** |
+| 200–500 m² | 13 | 0.46 | **0.92** |
+| 500+ m² | 16 | 0.44 | **0.88** |
+| **overall** | 141 | **0.27** | **0.88** |
+| **silent (<0.10)** | | **56%** | **4.3%** |
+
+Verdict: `needs_finetuning` → `calibrated`. The question this experiment was
+built to answer — data problem or capacity problem — is answered: **data.**
+
+### Read this before trusting the numbers
+
+The labelling merged adjacent buildings and kept the alleys between them, so
+the model learned **cluster envelopes, not footprints**:
+
+- predicted area is **+115%** vs the footprint model on the same block
+- so `packing_factor` must drop to **~0.5** (recorded as
+  `recommended_packing_factor` in `model/manifest.json`), or every kWh and
+  money figure roughly doubles
+- the building **count** it reports is meaningless
+- its Inria IoU (0.654 on 5 tiles, vs the shipped 0.800) is **not** a
+  regression in detection — recall is unchanged and precision falls, which is
+  what an envelope model does against footprint labels
+
+It is therefore **not the default model**. Serve it deliberately:
+
+```powershell
+$env:RSOLAR_MODEL = "finetune_indian"
+python -m webapp
+```
+
+### If you label another batch
+
+Draw **one polygon per building** and cut out the alleys, if you want a model
+whose area is directly usable. It is slower per tile, and the payoff is that
+the packing factor goes back to meaning what it means everywhere else. The
+current 80-tile set proves the approach works; a footprint-labelled set of the
+same size would make it *shippable*.

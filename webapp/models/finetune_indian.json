@@ -1,0 +1,54 @@
+{
+  "name": "finetune_indian",
+  "onnx": "finetune_indian.onnx",
+  "source_checkpoint": "finetune_indian.pt",
+  "arch": "unet++",
+  "encoder": "efficientnet-b0",
+  "in_channels": 3,
+  "out_channels": 1,
+  "window": 512,
+  "stride": 256,
+  "threshold": 0.5,
+  "tta": false,
+  "stats_key": "imagenet",
+  "mean": [
+    0.485,
+    0.456,
+    0.406
+  ],
+  "std": [
+    0.229,
+    0.224,
+    0.225
+  ],
+  "output": "logits",
+  "gsd_m_per_px": 0.3,
+  "serving_zoom": 19,
+  "label_semantics": "building-cluster-envelope",
+  "recommended_packing_factor": 0.5,
+  "default": false,
+  "trained_on": "hand-labelled-indian",
+  "metrics": {
+    "harness": "scripts/eval_inria.py on 5 Inria val tiles for the regression check; webapp/calibration.py reference calibration against 141 OpenStreetMap footprints in CV Raman Nagar, Bangalore, for the recall figures",
+    "inria_5tile": {
+      "iou_at_0.50": 0.654,
+      "precision": 0.701,
+      "recall": 0.907,
+      "baseline_shipped_iou_at_0.50": 0.7996,
+      "note": "Lower than the shipped model BY CONSTRUCTION: an envelope prediction over-covers Inria's footprint labels, which costs precision while recall holds. Not catastrophic forgetting."
+    },
+    "bangalore_osm_recall": {
+      "recall_at_0.40": 0.915,
+      "baseline_recall_at_0.40": 0.312,
+      "silent_fraction": 0.043,
+      "baseline_silent_fraction": 0.56,
+      "predicted_area_ratio_vs_baseline": 2.15
+    }
+  },
+  "limitations": [
+    "Predicts building-cluster envelopes, not individual footprints \u2014 building COUNT is meaningless and area includes inter-building alleys.",
+    "Trained on 80 tiles from two Indian cities; unvalidated anywhere else.",
+    "Regresses precision on Western imagery (Inria 5-tile IoU 0.80 -> 0.65)."
+  ],
+  "opset": 17
+}

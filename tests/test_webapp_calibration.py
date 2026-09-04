@@ -6,6 +6,7 @@ testing — the Overpass round trip is I/O, the geometry and the statistics are
 where a bug would silently change everyone's estimate.
 """
 
+import json
 import time
 
 import numpy as np
@@ -372,3 +373,73 @@ def test_plan_threshold_prefers_a_stored_measurement():
     assert cal.threshold == 0.33
     assert cal.source == "reference"
     assert cal.confidence == "high"
+
+
+# --------------------------------------------------------------------------- #
+# Which model actually serves
+# --------------------------------------------------------------------------- #
+def _fake_export(models_dir, stem, *, default=False, semantics="building-footprint"):
+    """Write a sidecar (and an empty .onnx) the way export_onnx.py would."""
+    models_dir.mkdir(parents=True, exist_ok=True)
+    (models_dir / f"{stem}.onnx").write_bytes(b"")
+    (models_dir / f"{stem}.json").write_text(json.dumps({
+        "name": stem, "onnx": f"{stem}.onnx", "arch": "unet++",
+        "encoder": "efficientnet-b0", "window": 512, "threshold": 0.5,
+        "mean": [0.485, 0.456, 0.406], "std": [0.229, 0.224, 0.225],
+        "label_semantics": semantics, "default": default,
+    }), encoding="utf-8")
+
+
+def test_a_newer_model_does_not_silently_replace_the_default(tmp_path, monkeypatch):
+    """The trap this flag exists for.
+
+    Exporting a specialised checkpoint used to make it the served model purely
+    because it was newest — and the symptom (every area estimate changes) looks
+    nothing like the cause.
+    """
+    import time
+
+    from webapp import inference
+
+    monkeypatch.setattr(inference, "SERVED_MODEL", "")
+    _fake_export(tmp_path, "general", default=True)
+    time.sleep(0.01)
+    _fake_export(tmp_path, "specialised", default=False,
+                 semantics="building-cluster-envelope")
+
+    onnx, sidecar = inference._find_model(tmp_path)
+    assert onnx.stem == "general"
+    assert sidecar.stem == "general"
+
+
+def test_rsolar_model_pins_the_served_model(tmp_path, monkeypatch):
+    from webapp import inference
+
+    _fake_export(tmp_path, "general", default=True)
+    _fake_export(tmp_path, "specialised", default=False)
+
+    monkeypatch.setattr(inference, "SERVED_MODEL", "specialised")
+    onnx, _ = inference._find_model(tmp_path)
+    assert onnx.stem == "specialised"
+
+
+def test_an_unknown_pinned_model_fails_loudly(tmp_path, monkeypatch):
+    from webapp import inference
+
+    _fake_export(tmp_path, "general", default=True)
+    monkeypatch.setattr(inference, "SERVED_MODEL", "does-not-exist")
+    with pytest.raises(FileNotFoundError, match="RSOLAR_MODEL"):
+        inference._find_model(tmp_path)
+
+
+def test_newest_still_wins_when_nothing_declares_itself_default(tmp_path, monkeypatch):
+    import time
+
+    from webapp import inference
+
+    monkeypatch.setattr(inference, "SERVED_MODEL", "")
+    _fake_export(tmp_path, "older", default=False)
+    time.sleep(0.01)
+    _fake_export(tmp_path, "newer", default=False)
+    onnx, _ = inference._find_model(tmp_path)
+    assert onnx.stem == "newer"

@@ -21,7 +21,7 @@ from pathlib import Path
 
 import numpy as np
 
-from webapp.config import MODELS_DIR
+from webapp.config import MODELS_DIR, SERVED_MODEL
 
 __all__ = ["ModelBundle", "load_model", "predict_mask"]
 
@@ -72,15 +72,44 @@ class ModelBundle:
             "gsd_m_per_px": m.get("gsd_m_per_px"),
             "serving_zoom": m.get("serving_zoom"),
             "label_semantics": m.get("label_semantics"),
+            "recommended_packing_factor": m.get("recommended_packing_factor"),
             "metrics": m.get("metrics", {}),
             "limitations": m.get("limitations", []),
         }
 
 
+def _sidecar_says_default(onnx: Path) -> bool:
+    try:
+        return bool(json.loads(
+            onnx.with_suffix(".json").read_text(encoding="utf-8")).get("default"))
+    except Exception:
+        return False
+
+
 def _find_model(models_dir: Path) -> tuple[Path | None, Path]:
-    """Locate ``(onnx_path_or_None, sidecar_json)``, newest first."""
+    """Locate ``(onnx_path_or_None, sidecar_json)``.
+
+    Priority: the ``RSOLAR_MODEL`` stem, then whichever sidecar declares
+    ``"default": true``, then the newest file. Only the last of those is a
+    guess, and it is the one that bites when a second model is exported — see
+    ``config.SERVED_MODEL``.
+    """
     onnx_files = sorted(models_dir.glob("*.onnx"),
                         key=lambda p: p.stat().st_mtime, reverse=True)
+
+    if SERVED_MODEL:
+        pinned = models_dir / f"{SERVED_MODEL}.onnx"
+        if not pinned.exists():
+            available = ", ".join(sorted(p.stem for p in onnx_files)) or "none"
+            raise FileNotFoundError(
+                f"RSOLAR_MODEL={SERVED_MODEL!r} but {pinned.name} is not in "
+                f"{models_dir}. Exported models: {available}")
+        return pinned, pinned.with_suffix(".json")
+
+    for onnx in onnx_files:
+        if _sidecar_says_default(onnx):
+            return onnx, onnx.with_suffix(".json")
+
     if onnx_files:
         onnx = onnx_files[0]
         return onnx, onnx.with_suffix(".json")

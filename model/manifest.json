@@ -66,7 +66,8 @@
         "Trained on five Western cities only: austin, chicago, kitsap (WA), tyrol-w, vienna.",
         "Untested on dense low-rise Indian, African or East-Asian rooftops.",
         "Expects ~0.3 m/px imagery; serve at Web Mercator z=19."
-      ]
+      ],
+      "default": true
     },
     "path raise 15.pt": {
       "arch": "unet",
@@ -275,6 +276,49 @@
         }
       },
       "sha256": "714475110c316b16e2865a8c618de59fbc5b9a63d036d7db8e224fff1f4a55c0"
+    },
+    "finetune_indian.pt": {
+      "arch": "unet++",
+      "encoder": "efficientnet-b0",
+      "encoder_weights": null,
+      "in_channels": 3,
+      "out_channels": 1,
+      "bilinear": false,
+      "stats_key": "imagenet",
+      "threshold": 0.5,
+      "tta": false,
+      "trained_on": "hand-labelled-indian",
+      "base_checkpoint": "unetpp_effb0_inria_20260903.pt",
+      "epochs": 25,
+      "window": 512,
+      "gsd_m_per_px": 0.3,
+      "serving_zoom": 19,
+      "default": false,
+      "label_semantics": "building-cluster-envelope",
+      "recommended_packing_factor": 0.5,
+      "note": "Fine-tuned on 80 hand-labelled tiles from Bangalore and Bhopal. Transforms Indian recall (0.31 -> 0.92 against OpenStreetMap footprints; 0-50 m2 houses 0.08 -> 0.88) but the labels merged adjacent buildings and the alleys between them, so it predicts CLUSTER ENVELOPES, not footprints: predicted area is ~2.1x the footprint model's on the same block. Use packing_factor ~0.5 rather than 0.70-0.75, and do not compare its Inria IoU with 0.7712 - different target. Serve it with RSOLAR_MODEL=finetune_indian.",
+      "metrics_verified": {
+        "harness": "scripts/eval_inria.py on 5 Inria val tiles for the regression check; webapp/calibration.py reference calibration against 141 OpenStreetMap footprints in CV Raman Nagar, Bangalore, for the recall figures",
+        "inria_5tile": {
+          "iou_at_0.50": 0.654,
+          "precision": 0.701,
+          "recall": 0.907,
+          "baseline_shipped_iou_at_0.50": 0.7996,
+          "note": "Lower than the shipped model BY CONSTRUCTION: an envelope prediction over-covers Inria's footprint labels, which costs precision while recall holds. Not catastrophic forgetting."
+        },
+        "bangalore_osm_recall": {
+          "recall_at_0.40": 0.915,
+          "baseline_recall_at_0.40": 0.312,
+          "silent_fraction": 0.043,
+          "baseline_silent_fraction": 0.56,
+          "predicted_area_ratio_vs_baseline": 2.15
+        }
+      },
+      "limitations": [
+        "Predicts building-cluster envelopes, not individual footprints — building COUNT is meaningless and area includes inter-building alleys.",
+        "Trained on 80 tiles from two Indian cities; unvalidated anywhere else.",
+        "Regresses precision on Western imagery (Inria 5-tile IoU 0.80 -> 0.65)."
+      ]
     }
   },
   "_current_best": {

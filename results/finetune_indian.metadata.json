@@ -1,0 +1,18 @@
+{
+  "base_checkpoint": "unetpp_effb0_inria_20260903.pt",
+  "arch": "unet++",
+  "encoder": "efficientnet-b0",
+  "stats_key": "imagenet",
+  "freeze_epochs": 5,
+  "total_epochs": 25,
+  "lr": 1e-05,
+  "pos_weight": 2.4,
+  "dice_weight": 0.6,
+  "n_train_tiles": 68,
+  "n_val_tiles": 12,
+  "best_val_iou": 0.514268229127827,
+  "best_epoch": 9,
+  "label_semantics": "building-cluster-envelope",
+  "trained_on": "hand-labelled-indian",
+  "not_comparable_to": "Inria pooled IoU 0.7712 \u2014 different label semantics, different cities, and a val set of a few dozen hand-drawn tiles"
+}

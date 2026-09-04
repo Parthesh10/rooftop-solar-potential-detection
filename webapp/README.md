@@ -248,6 +248,7 @@ terms and a 200k tiles/month free tier.
 |---|---|
 | `POST /api/analyze` | → `202 {job_id}`; `threshold` null = calibrated per area, `tta` bool |
 | `POST /api/calibrate` | → `202 {job_id}`; measures the threshold here against OpenStreetMap |
+| `POST /api/recalculate` | roof polygons + assumptions → the full estimate, no model involved |
 | `GET /api/region-profile?lat=&lon=` | local currency/tariff/grid defaults, threshold band, any stored calibration |
 | `GET /api/solar-resource?lat=&lon=` | monthly GHI / tilt-plane / temperature |
 | `GET /api/jobs/{id}` | job state, progress, result |
@@ -278,3 +279,64 @@ It is already a single container: `pip install -r requirements-webapp.txt`, copy
 ~50 MB against torch's ~2.5 GB. Before going public: check the tile ToS, put a
 rate limit in front of `/api/analyze`, and move jobs to Redis if you want more
 than one worker.
+
+## Correcting the detection
+
+The model is the weakest link outside its training regions — it misses
+buildings outright there, and no threshold recovers them
+(`results/RESULTS.md`). Rather than hide that, the results panel has
+**Correct the roofs**:
+
+- **click** a roof to select it, **Delete** to remove a false positive
+- **+ Add** then click corners, **Enter** (or double-click) to close a roof the
+  model missed, **Esc** to cancel
+- **Undo** / **Reset**, then **Recalculate from my edits**
+
+`POST /api/recalculate` re-runs the whole solar chain — packing factor, PVGIS
+yield, money, CO₂ — over the corrected polygons. Area is measured server-side
+with `pyproj`, exactly as for detected roofs; the browser owns the geometry and
+the server owns the measurement, so there is only ever one area implementation
+(this project has been bitten by an area bug once already).
+
+Edited results are labelled as such in the panel, user-drawn roofs are a
+different colour and carry no fabricated confidence score, and the detection
+settings shown still describe the original run.
+
+## Which model is served
+
+`webapp/models/` can hold several exported models. Selection is explicit, in
+this order:
+
+1. `RSOLAR_MODEL=<stem>` — pins one by file stem
+2. the sidecar declaring `"default": true`
+3. newest file (the last-resort guess)
+
+Newest-wins alone was a booby trap: exporting a specialised checkpoint would
+silently replace the general one for every user, and the symptom — every area
+estimate changes — looks nothing like the cause.
+
+```powershell
+$env:RSOLAR_MODEL = "finetune_indian"   # the Indian cluster-envelope model
+python -m webapp
+```
+
+**If you serve `finetune_indian`, drop the packing factor to ~0.5.** It
+predicts building-cluster envelopes (alleys included), not footprints, so its
+area runs ~2.1x the footprint model's on the same block. The sidecar carries
+`recommended_packing_factor` and `/api/model` reports it.
+
+## Pre-trained weights
+
+The shipped model is published, so a fresh clone does not have to retrain:
+
+**https://github.com/Parthesh10/rooftop-solar-potential-detection/releases/tag/v1.0-inria**
+
+Download all three assets into `webapp/models/` (the `.json` sidecar is
+required — it carries the normalisation constants, and the app refuses to load
+a model without it):
+
+```powershell
+gh release download v1.0-inria --dir webapp/models
+```
+
+Or run `python scripts/export_onnx.py` if you have the `.pt` locally.

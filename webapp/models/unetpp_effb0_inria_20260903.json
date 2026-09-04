@@ -25,6 +25,8 @@
   "gsd_m_per_px": 0.3,
   "serving_zoom": 19,
   "label_semantics": "building-footprint",
+  "recommended_packing_factor": null,
+  "default": true,
   "trained_on": "inria-official",
   "metrics": {
     "harness": "scripts/eval_inria.py \u2014 pooled (global) intersection/union over the whole split, which is the metric the Inria benchmark itself reports",

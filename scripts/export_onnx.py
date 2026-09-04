@@ -103,6 +103,11 @@ def main() -> None:
         "gsd_m_per_px": entry.get("gsd_m_per_px", 0.3),
         "serving_zoom": entry.get("serving_zoom", 19),
         "label_semantics": entry.get("label_semantics", "building-footprint"),
+        # A cluster-envelope model predicts roof *plus* the alleys between
+        # merged buildings, so it needs a smaller packing factor than a
+        # footprint model or the energy estimate inherits the gap area.
+        "recommended_packing_factor": entry.get("recommended_packing_factor"),
+        "default": bool(entry.get("default", False)),
         "trained_on": entry.get("trained_on"),
         "metrics": entry.get("metrics_verified", {}),
         "limitations": entry.get("limitations", []),
