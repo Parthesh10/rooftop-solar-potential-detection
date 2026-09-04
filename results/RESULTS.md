@@ -410,3 +410,95 @@ sets disagree about what a "roof" is, so mixing them teaches a contradiction.
 Either relabel a subset of the Indian tiles per-building, or train a
 two-headed model. That design question is unresolved and worth more than a
 speculative GPU run.
+
+---
+
+## Relabelling from OpenStreetMap, and the three-way comparison (2026-09-05)
+
+The envelope labels worked but predicted the wrong quantity. The obvious fix —
+keep the good tiles, drop the merged ones — **does not work**, and the
+measurement is unambiguous:
+
+| separator | merged polygons | single-building polygons |
+|---|---|---|
+| solidity | 1.00 | 1.00 |
+| rectangularity | 0.89 | 0.89 |
+| area (median) | 859 m² | 359 m² |
+
+Shape carries essentially no signal. The best area cutoff (490 m²) keeps 63% of
+true single-building polygons while also keeping 14% of merges, and requiring a
+tile to be mostly footprint-like leaves **11–20 usable tiles out of 91**. The
+merging is pervasive; there is no clean subset hiding inside it.
+
+Ground truth for that table came from OpenStreetMap: 4,828 building footprints
+across the four AOIs, counting how many distinct OSM buildings fall inside each
+hand-drawn polygon (≥2 = a definite merge). 197 polygons were definite merges,
+126 contained exactly one building, 512 contained none.
+
+### OSM is not a drop-in replacement either
+
+| | share of tile area |
+|---|---|
+| hand labels (envelopes) | 31.8% |
+| OSM buildings | 16.2% |
+| overlap | 8.5% |
+
+OSM covers only **26.7%** of what the labeller marked built-up, and **47.6% of
+OSM buildings fall outside any hand polygon** — the labeller covered part of
+each tile, not all of it. Training on OSM as-is would call a great deal of real
+roof "background", which is precisely the failure being fixed.
+
+### Using each source for what it is reliable at
+
+`scripts/build_osm_labels.py`:
+
+| label | source | why |
+|---|---|---|
+| **positive** | inside an OSM building | human-drawn, one polygon per building |
+| **ignore** | hand envelope minus OSM | genuinely unknown — an alley, or a roof nobody mapped |
+| **negative** | everything else | |
+
+103 tiles (more than the 80 hand-labelled ones, because OSM covers tiles the
+labeller skipped), 23% positive, 17% ignored. Validation holds out the whole
+`bangalore_cvraman_a` AOI, which contains the CV Raman Nagar benchmark block —
+so the numbers below are measured on data the model never saw.
+
+### The comparison that decides which model to ship
+
+Pooled IoU against the 142 OSM footprints in the held-out block, threshold 0.50.
+OSM's reference area there is 30,436 m².
+
+| model | IoU | precision | recall | predicted area | ÷ OSM |
+|---|---|---|---|---|---|
+| shipped (Inria) | 0.254 | 0.491 | 0.345 | 21,373 m² | 0.70× |
+| envelope fine-tune | **0.444** | 0.501 | 0.796 | 48,349 m² | 1.59× |
+| **OSM fine-tune** | 0.409 | 0.502 | 0.689 | 41,825 m² | **1.37×** |
+
+**Precision is ~0.49 for all three.** That is not a coincidence and it is not
+model quality — it is OpenStreetMap's incompleteness. Roughly half of what
+*any* model predicts is simply not mapped, so precision here measures the
+reference, not the prediction. Read the IoU and recall columns; treat precision
+as a constant.
+
+The envelope model wins on raw IoU, but it buys that with area: a blob painted
+over a cluster covers every OSM building inside it for free. The OSM model
+gives up 0.035 IoU for a 14-point reduction in area inflation **and** correct
+footprint semantics, so the ordinary packing factor applies instead of 0.5.
+That is the better trade for an app that multiplies area into money.
+
+### Neither is a safe global default
+
+| model | Inria IoU (5 val tiles, thr 0.50) |
+|---|---|
+| shipped | **0.7996** |
+| envelope fine-tune | 0.6540 |
+| OSM fine-tune | 0.6394 |
+
+Fine-tuning on ~100 narrow tiles costs **~0.16 Inria IoU regardless of label
+source**. Better labels fixed *what* the model predicts; they did nothing about
+forgetting. Both fine-tunes stay opt-in behind `RSOLAR_MODEL`.
+
+That is what `kaggle_joint/` is for, and it is only coherent now that both
+halves mean the same thing: Inria footprints plus the OSM-relabelled Indian
+tiles, in one training run, with the Indian tiles repeated 20x so 103 of them
+are ~22% of an epoch rather than 1.4%. Launched 2026-09-05.

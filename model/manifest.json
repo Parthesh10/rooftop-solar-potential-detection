@@ -319,6 +319,51 @@
         "Trained on 80 tiles from two Indian cities; unvalidated anywhere else.",
         "Regresses precision on Western imagery (Inria 5-tile IoU 0.80 -> 0.65)."
       ]
+    },
+    "finetune_osm.pt": {
+      "arch": "unet++",
+      "encoder": "efficientnet-b0",
+      "encoder_weights": null,
+      "in_channels": 3,
+      "out_channels": 1,
+      "bilinear": false,
+      "stats_key": "imagenet",
+      "threshold": 0.5,
+      "tta": false,
+      "trained_on": "indian-tiles-osm-relabelled",
+      "base_checkpoint": "unetpp_effb0_inria_20260903.pt",
+      "epochs": 25,
+      "window": 512,
+      "gsd_m_per_px": 0.3,
+      "serving_zoom": 19,
+      "default": false,
+      "label_semantics": "building-footprint",
+      "recommended_packing_factor": 0.7,
+      "note": "Fine-tuned on 103 Indian tiles relabelled from OpenStreetMap, with hand-drawn envelopes used as an IGNORE mask (positive = OSM building, ignore = envelope minus OSM, negative = the rest). Preferred over finetune_indian.pt for India: same footprint semantics as the shipped model, so the normal packing factor applies, and far less area inflation (1.37x the OSM reference vs the envelope model's 1.59x). Still regresses Inria (0.639 vs 0.800 on 5 val tiles), so it is not a global default. Serve with RSOLAR_MODEL=finetune_osm.",
+      "metrics_verified": {
+        "harness": "Pooled IoU against 142 OpenStreetMap footprints in CV Raman Nagar, Bangalore - an AOI held out of training in full - plus scripts/eval_inria.py on 5 Inria val tiles",
+        "bangalore_vs_osm_at_0.50": {
+          "iou": 0.409,
+          "precision": 0.502,
+          "recall": 0.689,
+          "predicted_area_ratio_vs_osm": 1.37,
+          "shipped_baseline_iou": 0.254,
+          "shipped_baseline_recall": 0.345,
+          "note": "Precision is ~0.49 for every model tested, which measures OpenStreetMap's incompleteness rather than model quality - roughly half of what any model predicts is not mapped."
+        },
+        "inria_5tile_at_0.50": {
+          "iou": 0.6394,
+          "precision": 0.6905,
+          "recall": 0.8962,
+          "shipped_baseline_iou": 0.7996
+        },
+        "holdout_val_iou": 0.253
+      },
+      "limitations": [
+        "Regresses Inria (0.639 vs the shipped 0.800) - fine-tuning on ~100 narrow tiles costs ~0.16 IoU regardless of label source. Joint training (kaggle_joint/) is the fix.",
+        "Positives come from OpenStreetMap, which is incomplete here; buildings nobody mapped were marked ignore only where the labeller had drawn an envelope over them.",
+        "Trained on two Indian cities; unvalidated anywhere else."
+      ]
     }
   },
   "_current_best": {
