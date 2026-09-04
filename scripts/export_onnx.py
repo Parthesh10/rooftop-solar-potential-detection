@@ -95,6 +95,7 @@ def main() -> None:
         "window": window,
         "stride": window // 2,
         "threshold": threshold,
+        "tta": bool(entry.get("tta", False)),
         "stats_key": stats_key,
         "mean": mean,
         "std": std,

@@ -146,6 +146,10 @@ ASSUMPTION_SOURCES: dict[str, str] = {
 # PVGIS (EU Joint Research Centre): free, no API key, global coverage including
 # India. Gives location-specific yield rather than a hardcoded sun-hours number.
 PVGIS_URL = "https://re.jrc.ec.europa.eu/api/v5_2/PVcalc"
+# MRcalc: monthly *radiation* — horizontal irradiation (GHI), optimal-plane
+# irradiation and mean air temperature. This is the location's solar resource,
+# independent of any system design, and is what makes two sites comparable.
+PVGIS_MR_URL = "https://re.jrc.ec.europa.eu/api/v5_2/MRcalc"
 PVGIS_TIMEOUT_S = 25.0
 
 # Fallback if PVGIS is unreachable (offline demo). Deliberately crude, and the
@@ -159,8 +163,12 @@ FALLBACK_SPECIFIC_YIELD_KWH_PER_KWP = 1400.0  # ~India average
 # Drop specks below this many square metres — at 0.3 m/px a 10 m^2 blob is ~110
 # pixels. Anything smaller is noise, not a roof worth panelling.
 MIN_BUILDING_AREA_M2 = 10.0
-# Douglas-Peucker tolerance as a fraction of the contour perimeter.
-POLYGON_SIMPLIFY_FRAC = 0.01
+# Douglas-Peucker tolerance as a fraction of the contour perimeter. Measured on
+# a dense Bangalore block: 0.01 threw away 6.1% of the detected area by cutting
+# corners off real roofs; 0.005 loses 4.6% and 0.002 only 3.8%, but vertex count
+# triples. 0.005 is the knee — and since this number is multiplied straight into
+# the energy estimate, biasing it low by 6% was not acceptable.
+POLYGON_SIMPLIFY_FRAC = 0.005
 # Morphological open/close kernel, in pixels, to clean up ragged mask edges.
 MORPH_KERNEL_PX = 3
 

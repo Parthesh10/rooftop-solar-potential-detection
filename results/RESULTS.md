@@ -6,9 +6,14 @@ are the project's history and a secondary out-of-distribution check.
 
 ---
 
-# THE SHIPPED MODEL — Inria, 2026-09-03
+# THE SHIPPED MODEL — Inria, 2026-09-03 (re-measured 2026-09-04)
 
-**Inria official val IoU 0.7233.** Target was ≥ 0.72. ✅
+**Inria official val IoU 0.7712** at the shipped threshold of 0.50, rising to
+**0.7809** with test-time augmentation. Target was ≥ 0.72. ✅
+
+> The 0.7233 quoted below in "The Inria run" is the *training-time* number, a
+> mean of per-window IoUs. It is the same model on the same split; pooled IoU is
+> the comparable-to-literature figure. See "Post-hoc tuning" for why they differ.
 
 | | |
 |---|---|
@@ -20,13 +25,12 @@ are the project's history and a secondary out-of-distribution check.
 | Input | 512×512 @ 0.3 m/px, ImageNet normalisation |
 | Labels | **building footprints** — roof extent, not installable area |
 
-| metric | value |
-|---|---|
-| **IoU** | **0.7233** |
-| F1 | 0.8180 |
-| accuracy | 0.9634 |
-| precision | 0.8226 |
-| recall | 0.8568 |
+| metric | shipped (thr 0.50) | with 8x TTA (thr 0.60) |
+|---|---|---|
+| **IoU** (pooled) | **0.7712** | **0.7809** |
+| F1 | 0.8708 | 0.8770 |
+| precision | 0.8454 | 0.8648 |
+| recall | 0.8978 | 0.8895 |
 
 Config: `--window 512 --samples-per-tile 48 --pos-weight 2.4 --dice-weight 0.6
 --epochs 60 --batch-size 16 --lr 3e-4 --patience 12`, AdamW + cosine with
@@ -58,6 +62,54 @@ better score.
 Published Inria building-segmentation work sits ~0.78–0.82 with much larger
 models and multi-scale inference. 0.723 from a 6.6 M-parameter model in one
 4.8 h run is an honest, defensible result.
+
+### Post-hoc tuning, 2026-09-04 — and a metric correction
+
+**The training number was understated.** Training reported val IoU 0.7233, which
+is a **mean of per-window IoUs**: it weights a 512x512 window holding one small
+roof the same as a dense city block, so sparse windows dominate it. Pooled
+(global) intersection-over-union on the same model and the same split is
+**0.7712** — and pooled is the metric the Inria benchmark itself reports, so it
+is the one comparable to published work. Both numbers are in the manifest.
+
+A threshold and TTA sweep then bought real gains for no retraining
+(`scripts/eval_inria.py`, 25 val tiles / 2025 windows):
+
+| setting | IoU | F1 | precision | recall |
+|---|---|---|---|---|
+| threshold 0.50, no TTA | 0.7712 | 0.8708 | 0.8454 | 0.8978 |
+| threshold 0.65, no TTA | 0.7733 | 0.8722 | 0.8639 | 0.8806 |
+| **threshold 0.60 + 8x dihedral TTA** | **0.7809** | **0.8770** | **0.8648** | **0.8895** |
+
+### The threshold does not transfer out of distribution
+
+Raising the shipped default from 0.50 to 0.65 on the strength of the table above
+was **wrong**, and measurably so. On Indian cities the model is under-confident,
+so a stricter cut deletes real buildings:
+
+| area | roof m² @ 0.50 | @ 0.60 | change |
+|---|---|---|---|
+| Bangalore, Jayanagar | 73,697 | 68,658 | **-7%** |
+| Bangalore, Indiranagar | 55,923 | 49,569 | **-11%** |
+| Bangalore, Manyata | 50,084 | 47,179 | -6% |
+| Bhopal, MANIT | 3,872 | 3,569 | -8% |
+
+Since 0.50 and 0.65 differ by only 0.002 IoU in-distribution — noise — but by
+7-11% of recall out of distribution, **0.50 is the correct global default** and
+the app now picks per region (`webapp/coverage.THRESHOLD_BY_LEVEL`): 0.50 inside
+the training cities, 0.45 near them, 0.40 outside. Users are told when this
+happens and can override it.
+
+**TTA does not transfer either.** On Inria it is worth +0.010 IoU; on Bangalore
+it measured +0.4% area at threshold 0.30 and **-5%** at 0.50, for 8x the compute.
+It ships opt-in, not on by default.
+
+Two things this ruled out along the way, both by measurement rather than
+argument: there is **no georeferencing offset** (mask vs re-projected polygons
+round-trips at IoU 0.92 with best-fit shift exactly (0,0)), and the model does
+**not** have a bright-roof blind spot (pixels above luminance 200 are detected at
+34% versus 23% for mid-tones). The gap is genuine domain shift — Bangalore
+imagery has contrast std 78 against Inria's 40-52.
 
 ### Known limitations — read before trusting a number
 

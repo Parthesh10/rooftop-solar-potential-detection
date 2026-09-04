@@ -90,6 +90,8 @@ class AnalyzeRequest(BaseModel):
     bounds: Bounds
     zoom: int = Field(SERVING_ZOOM, ge=16, le=21)
     threshold: float | None = Field(None, ge=0.05, le=0.95)
+    tta: bool = Field(False, description="8x dihedral test-time augmentation: "
+                                         "+1 IoU / +2 precision for 8x the time")
     packing_factor: float = Field(0.75, ge=0.1, le=1.0)
     module_efficiency: float = Field(0.20, ge=0.05, le=0.30)
     system_losses_pct: float = Field(14.0, ge=0.0, le=50.0)
@@ -168,6 +170,13 @@ async def run_analysis(job: Job, req: AnalyzeRequest) -> None:
         centre_lon = (b.east + b.west) / 2.0
         mpp = metres_per_pixel(centre_lat, zoom)
 
+        # Classify the AOI first: the decision threshold depends on whether the
+        # model has seen anything like this place. See coverage.THRESHOLD_BY_LEVEL.
+        cov = coverage.coverage_note(centre_lat, centre_lon)
+        auto_threshold = req.threshold is None
+        threshold = (coverage.suggested_threshold(cov["level"], bundle.threshold)
+                     if auto_threshold else req.threshold)
+
         # --- 1. imagery -----------------------------------------------------
         job.state, job.message = "fetching", f"fetching {grid.n_tiles} tiles"
 
@@ -183,16 +192,17 @@ async def run_analysis(job: Job, req: AnalyzeRequest) -> None:
 
         # --- 2. inference ---------------------------------------------------
         job.state, job.message = "detecting", "running the model"
+        suffix = " (high accuracy, 8 passes)" if req.tta else ""
 
         def infer_progress(done: int, total: int) -> None:
             job.progress = 0.45 + 0.40 * done / max(total, 1)
-            job.message = f"detecting rooftops {done}/{total} windows"
+            job.message = f"detecting rooftops {done}/{total} windows{suffix}"
 
         loop = asyncio.get_running_loop()
         mask, probs = await loop.run_in_executor(
             None,
-            lambda: predict_mask(mosaic, bundle, threshold=req.threshold,
-                                 progress=infer_progress),
+            lambda: predict_mask(mosaic, bundle, threshold=threshold,
+                                 tta=req.tta, progress=infer_progress),
         )
 
         # --- 3. vectorise + measure ----------------------------------------
@@ -215,7 +225,13 @@ async def run_analysis(job: Job, req: AnalyzeRequest) -> None:
 
         params = req.solar_params()
         total_roof = sum(x.area_m2 for x in buildings)
+        job.message = "fetching solar resource data"
         est = solar.estimate(total_roof, centre_lat, centre_lon, params)
+
+        # The location's solar exposure, independent of any system design. Runs
+        # off the same cache, so it is free on a repeat query in the same area.
+        resource = await loop.run_in_executor(
+            None, lambda: solar.pvgis_radiation(centre_lat, centre_lon))
         job.progress = 0.97
 
         aoi_area = geometry.bounds_area_m2(b.west, b.south, b.east, b.north)
@@ -225,13 +241,20 @@ async def run_analysis(job: Job, req: AnalyzeRequest) -> None:
                 f"{n_failed} of {grid.n_tiles} imagery tiles failed to load; "
                 f"those areas were treated as blank and may hide roofs.")
         warnings.extend(solar.sanity_check_capacity(est["capacity_kwp"]))
+        if auto_threshold:
+            note = coverage.threshold_note(cov["level"], threshold)
+            if note:
+                warnings.append(note)
         if not buildings:
             warnings.append(
                 "No rooftops detected. The imagery may be cloudy, too low "
                 "resolution at this location, or genuinely empty.")
 
         job.result = {
-            "coverage": coverage.coverage_note(centre_lat, centre_lon),
+            "coverage": cov,
+            "solar_resource": {**resource,
+                               "lat": round(centre_lat, 4),
+                               "lon": round(centre_lon, 4)},
             "geojson": geometry.buildings_to_geojson(buildings,
                                                      params.packing_factor),
             "summary": {
@@ -252,6 +275,12 @@ async def run_analysis(job: Job, req: AnalyzeRequest) -> None:
                 "tiles_failed": n_failed,
                 "metres_per_pixel": round(mpp, 4),
                 "mosaic_px": [grid.width_px, grid.height_px],
+            },
+            "detection": {
+                "threshold": round(threshold, 2),
+                "threshold_auto": auto_threshold,
+                "model_default_threshold": bundle.threshold,
+                "tta": req.tta,
             },
             "model": bundle.card(),
             "assumptions": params.to_dict(),
@@ -293,6 +322,20 @@ async def model_card():
         return get_model().card()
     except HTTPException as exc:
         return JSONResponse({"error": exc.detail}, status_code=exc.status_code)
+
+
+@app.get("/api/solar-resource")
+async def solar_resource(lat: float, lon: float):
+    """Monthly solar exposure at a point — usable without running a detection.
+
+    Split out so the UI can show the resource as soon as the map settles, before
+    anyone draws a box.
+    """
+    if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+        raise HTTPException(422, "lat/lon out of range")
+    loop = asyncio.get_running_loop()
+    data = await loop.run_in_executor(None, lambda: solar.pvgis_radiation(lat, lon))
+    return {**data, "lat": round(lat, 4), "lon": round(lon, 4)}
 
 
 @app.get("/api/assumptions")

@@ -22,6 +22,7 @@
       "bilinear": false,
       "stats_key": "imagenet",
       "threshold": 0.5,
+      "tta": false,
       "trained_on": "inria-official",
       "epochs": 60,
       "window": 512,
@@ -30,15 +31,35 @@
       "label_semantics": "building-footprint",
       "note": "THE SHIPPED MODEL. Labels are building footprints, not installable area — apply a packing factor downstream and say 'estimated'.",
       "metrics_verified": {
-        "harness": "evaluate.py, model.eval() on (F-03), no empty-tile inversion (F-08)",
-        "measured": "2026-09-03",
-        "splits": "Inria official protocol — tiles 1-5 per city held out (25 val tiles, 2025 windows)",
+        "harness": "scripts/eval_inria.py — pooled (global) intersection/union over the whole split, which is the metric the Inria benchmark itself reports",
+        "measured": "2026-09-04",
+        "splits": "Inria official protocol — tiles 1-5 per city held out (25 val tiles, 2025 windows at 512 stride 512)",
         "val": {
+          "iou": 0.7809,
+          "f1": 0.877,
+          "precision": 0.8648,
+          "recall": 0.8895,
+          "threshold": 0.5,
+          "tta": "8x dihedral"
+        },
+        "val_no_tta": {
+          "iou": 0.7733,
+          "f1": 0.8722,
+          "precision": 0.8639,
+          "recall": 0.8806,
+          "threshold": 0.65
+        },
+        "val_as_trained": {
+          "iou": 0.7712,
+          "f1": 0.8708,
+          "precision": 0.8454,
+          "recall": 0.8978,
+          "threshold": 0.5,
+          "note": "the shipped default before the 2026-09-04 threshold/TTA sweep"
+        },
+        "_per_window_mean": {
           "iou": 0.7233,
-          "f1": 0.818,
-          "accuracy": 0.9634,
-          "precision": 0.8226,
-          "recall": 0.8568
+          "note": "The number training reported. It is a MEAN OF PER-WINDOW IoUs, which weights a window holding one small roof the same as a dense one and so reads low. Pooled IoU (0.7712 at the same threshold) is the comparable-to-literature figure. Both are of the same model on the same split."
         }
       },
       "limitations": [

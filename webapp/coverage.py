@@ -78,3 +78,45 @@ def coverage_note(lat: float, lon: float) -> dict:
 
     return {"level": level, "nearest": name,
             "distance_km": round(dist, 0), "note": note}
+
+
+# --------------------------------------------------------------------------- #
+# Threshold policy
+# --------------------------------------------------------------------------- #
+# The optimal decision threshold is not a property of the model alone — it is a
+# property of the model *on a domain*. Measured on Inria val (in-distribution),
+# 0.50 and 0.65 differ by 0.002 IoU: noise. Measured on Bangalore
+# (out-of-distribution), going from 0.50 to 0.60 lost 6-11% of detected roof
+# area, because the model is systematically under-confident on rooftops that do
+# not look like its training set and a stricter cut removes real buildings.
+#
+# So: keep 0.50 as the in-distribution default (near-optimal there, and safe),
+# and relax it where the model is known to be under-confident. This is a
+# reasoned correction for a measured under-confidence, **not** a threshold
+# tuned on labelled local data — there is no labelled Indian set to tune on.
+# The UI says so, and the slider overrides it.
+THRESHOLD_BY_LEVEL: dict[str, float] = {
+    "trained": 0.50,
+    "regional": 0.45,
+    "untested": 0.40,
+}
+
+
+def suggested_threshold(level: str, default: float = 0.50) -> float:
+    """Decision threshold to use for an AOI at this coverage level."""
+    return THRESHOLD_BY_LEVEL.get(level, default)
+
+
+def threshold_note(level: str, threshold: float) -> str | None:
+    """Plain-language reason for a non-default threshold, or None."""
+    if level == "untested":
+        return (f"Detection sensitivity was raised (threshold {threshold:.2f} "
+                f"instead of 0.50) because the model is under-confident on "
+                f"rooftops unlike its training data and would otherwise miss "
+                f"buildings here. If you see areas marked that are not roofs, "
+                f"raise the threshold under Detection sensitivity.")
+    if level == "regional":
+        return (f"Detection sensitivity was raised slightly (threshold "
+                f"{threshold:.2f}) as this area sits outside the training "
+                f"cities.")
+    return None
