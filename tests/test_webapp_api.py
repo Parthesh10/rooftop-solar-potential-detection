@@ -207,6 +207,101 @@ def test_region_profile_rejects_impossible_coordinates(client):
                       params={"lat": 991, "lon": 0}).status_code == 422
 
 
+# --------------------------------------------------------------------------- #
+# Edit and recalculate
+# --------------------------------------------------------------------------- #
+def _roof_fc(n=2, west=77.6, south=12.9, side=0.0009):
+    feats = []
+    for i in range(n):
+        w = west + i * side * 2
+        ring = [[w, south], [w + side, south], [w + side, south + side],
+                [w, south + side], [w, south]]
+        feats.append({"type": "Feature", "properties": {"id": i},
+                      "geometry": {"type": "Polygon", "coordinates": [ring]}})
+    return {"type": "FeatureCollection", "features": feats}
+
+
+BOUNDS = {"west": 77.59, "south": 12.89, "east": 77.61, "north": 12.91}
+
+
+@pytest.fixture
+def stub_pvgis(monkeypatch):
+    monkeypatch.setattr(
+        "webapp.solar.pvgis_yield",
+        lambda lat, lon, p: {"annual_kwh_per_kwp": 1500.0,
+                             "monthly_kwh_per_kwp": [125.0] * 12,
+                             "optimal_tilt_deg": 20.0, "azimuth_deg": 0.0,
+                             "source": "stub", "ok": True})
+    monkeypatch.setattr("webapp.solar.pvgis_radiation",
+                        lambda lat, lon: {"source": "stub", "ok": True})
+
+
+def test_recalculate_scales_with_the_geometry_it_is_given(client, stub_pvgis):
+    one = client.post("/api/recalculate",
+                      json={"geojson": _roof_fc(1), "bounds": BOUNDS}).json()
+    two = client.post("/api/recalculate",
+                      json={"geojson": _roof_fc(2), "bounds": BOUNDS}).json()
+    assert two["summary"]["roof_area_m2"] == pytest.approx(
+        2 * one["summary"]["roof_area_m2"], rel=1e-3)
+    assert two["summary"]["annual_kwh"] > one["summary"]["annual_kwh"]
+    assert two["summary"]["building_count"] == 2
+    assert two["edited"] is True
+
+
+def test_recalculate_honours_the_same_assumptions_as_analyze(client, stub_pvgis):
+    """The edit path must not quietly use different defaults."""
+    body = {"geojson": _roof_fc(1), "bounds": BOUNDS, "packing_factor": 0.5,
+            "module_efficiency": 0.10, "tariff_per_kwh": 10.0}
+    s = client.post("/api/recalculate", json=body).json()["summary"]
+    assert s["usable_area_m2"] == pytest.approx(s["roof_area_m2"] * 0.5, rel=1e-3)
+    # area x packing x efficiency = kWp
+    assert s["capacity_kwp"] == pytest.approx(s["usable_area_m2"] * 0.10, rel=1e-3)
+    assert s["annual_savings"] == pytest.approx(s["annual_kwh"] * 10.0, rel=1e-3)
+
+
+def test_recalculate_on_an_empty_edit_returns_zero_and_says_so(client, stub_pvgis):
+    r = client.post("/api/recalculate", json={
+        "geojson": {"type": "FeatureCollection", "features": []},
+        "bounds": BOUNDS})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["summary"]["roof_area_m2"] == 0
+    assert body["summary"]["building_count"] == 0
+    assert any("no roof polygons" in w.lower() for w in body["warnings"])
+
+
+def test_recalculate_reports_unusable_shapes_rather_than_dropping_them_silently(
+        client, stub_pvgis):
+    fc = _roof_fc(1)
+    fc["features"].append({"type": "Feature", "properties": {},
+                           "geometry": {"type": "Point", "coordinates": [77.6, 12.9]}})
+    body = client.post("/api/recalculate",
+                       json={"geojson": fc, "bounds": BOUNDS}).json()
+    assert body["summary"]["building_count"] == 1
+    assert any("no usable polygon geometry" in w for w in body["warnings"])
+
+
+def test_recalculate_has_no_model_confidence_to_report(client, stub_pvgis):
+    body = client.post("/api/recalculate",
+                       json={"geojson": _roof_fc(1), "bounds": BOUNDS}).json()
+    assert body["summary"]["mean_confidence"] is None
+
+
+def test_recalculate_rejects_an_oversized_payload(client):
+    fc = {"type": "FeatureCollection",
+          "features": [{"type": "Feature", "properties": {},
+                        "geometry": {"type": "Polygon", "coordinates": []}}] * 5001}
+    r = client.post("/api/recalculate", json={"geojson": fc, "bounds": BOUNDS})
+    assert r.status_code == 422
+
+
+def test_recalculate_validates_bounds(client):
+    r = client.post("/api/recalculate", json={
+        "geojson": _roof_fc(1),
+        "bounds": {"west": 10.0, "south": 0.0, "east": 5.0, "north": 1.0}})
+    assert r.status_code == 422
+
+
 @needs_model
 def test_sliding_window_returns_the_input_geometry():
     from webapp.inference import load_model, predict_mask

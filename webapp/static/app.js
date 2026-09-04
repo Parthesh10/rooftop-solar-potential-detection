@@ -13,6 +13,13 @@ const state = {
   jobId: null,
   poll: null,
   result: null,
+  editing: false,     // roof-correction mode
+  drawingRoof: false, // ...and specifically placing vertices for a new roof
+  editGeo: null,      // working copy of the roof FeatureCollection
+  editUndo: [],       // snapshots for Undo
+  editDirty: false,
+  selectedRoof: null,
+  newVertices: [],
   region: null,       // /api/region-profile for the current map centre
   regionKey: null,
   touched: new Set(), // assumption fields the user has edited by hand
@@ -118,9 +125,17 @@ function initMap() {
     state.map.addLayer({
       id: 'roofs-fill', type: 'fill', source: 'roofs',
       paint: {
+        // A user-drawn roof has no model confidence, so it gets its own colour
+        // rather than a fabricated score. `coalesce` keeps the interpolate from
+        // erroring on a null.
         'fill-color': [
-          'interpolate', ['linear'], ['get', 'confidence'],
-          0.5, '#c2410c', 0.75, '#f5a623', 0.95, '#ffd97a',
+          'case',
+          ['==', ['get', 'user_added'], true], '#38bdf8',
+          [
+            'interpolate', ['linear'],
+            ['coalesce', ['get', 'confidence'], 0.75],
+            0.5, '#c2410c', 0.75, '#f5a623', 0.95, '#ffd97a',
+          ],
         ],
         'fill-opacity': 0.55,
       },
@@ -135,9 +150,30 @@ function initMap() {
       paint: { 'line-color': '#ffffff', 'line-width': 3 },
     });
 
+    // The roof currently being drawn: a rubber-band outline plus its vertices.
+    state.map.addSource('draw', { type: 'geojson', data: emptyFC() });
+    state.map.addLayer({
+      id: 'draw-line', type: 'line', source: 'draw',
+      filter: ['==', ['geometry-type'], 'LineString'],
+      paint: { 'line-color': '#38bdf8', 'line-width': 2, 'line-dasharray': [2, 1] },
+    });
+    state.map.addLayer({
+      id: 'draw-dots', type: 'circle', source: 'draw',
+      filter: ['==', ['geometry-type'], 'Point'],
+      paint: {
+        'circle-radius': 4, 'circle-color': '#38bdf8',
+        'circle-stroke-color': '#ffffff', 'circle-stroke-width': 1.5,
+      },
+    });
+
     state.map.on('click', 'roofs-fill', (e) => {
       const f = e.features[0];
       if (!f) return;
+      if (state.editing) {
+        // In edit mode a click selects for deletion instead of explaining.
+        if (!state.drawingRoof) selectRoof(+f.properties.id);
+        return;
+      }
       const pr = f.properties;
       new maplibregl.Popup({ closeButton: false, className: 'roof-popup' })
         .setLngLat(e.lngLat)
@@ -395,6 +431,27 @@ function wireControls() {
   });
 
   $('calibrate-btn').onclick = runCalibration;
+
+  $('edit-btn').onclick = enterEditMode;
+  $('edit-done-btn').onclick = exitEditMode;
+  $('add-roof-btn').onclick = () =>
+    (state.drawingRoof ? cancelDrawRoof() : startDrawRoof());
+  $('del-roof-btn').onclick = deleteSelectedRoof;
+  $('undo-edit-btn').onclick = undoEdit;
+  $('reset-edit-btn').onclick = resetEdits;
+  $('apply-edit-btn').onclick = applyEdits;
+
+  // Placing vertices for a new roof. Bound on the map, not the roof layer, so
+  // a click over empty ground still counts.
+  state.map.on('click', (e) => {
+    if (!state.editing || !state.drawingRoof) return;
+    state.newVertices.push([e.lngLat.lng, e.lngLat.lat]);
+    renderDrawPreview();
+    refreshEditLayer();
+  });
+  state.map.on('dblclick', (e) => {
+    if (state.editing && state.drawingRoof) { e.preventDefault(); commitNewRoof(); }
+  });
   state.map.on('moveend', () => scheduleRegionRefresh());
   scheduleRegionRefresh(0);
 
@@ -441,6 +498,13 @@ function wireControls() {
     if (e.target.id === 'about-modal') $('about-modal').hidden = true;
   });
   document.addEventListener('keydown', (e) => {
+    if (state.editing && !/^(INPUT|TEXTAREA)$/.test(e.target.tagName)) {
+      if (e.key === 'Enter' && state.drawingRoof) { e.preventDefault(); commitNewRoof(); return; }
+      if (e.key === 'Escape' && state.drawingRoof) { e.preventDefault(); cancelDrawRoof(); return; }
+      if ((e.key === 'Delete' || e.key === 'Backspace') && state.selectedRoof != null) {
+        e.preventDefault(); deleteSelectedRoof(); return;
+      }
+    }
     // Keyboard shortcuts, but never while the user is typing in a field.
     const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
 
@@ -951,6 +1015,220 @@ function renderCalibration(res) {
       ? `<p class="calib-warn">${esc(cal.note)}</p>` : '');
 }
 
+
+/* ─────────────────── roof correction (edit mode) ───────────────────
+
+   The model is the weakest link outside its training regions — it misses
+   buildings outright there (see results/RESULTS.md), and no threshold recovers
+   them. Rather than pretend otherwise, this lets the user fix the geometry and
+   keep the rest of the pipeline: the same packing factor, the same PVGIS yield,
+   the same money and CO2 arithmetic, applied to roofs they trust.
+
+   Area is deliberately NOT computed here. The server measures it geodesically
+   with pyproj (webapp/geometry.py); doing it again in JavaScript would mean two
+   implementations that can disagree, and this project has already been bitten
+   by an area bug once (Web Mercator overstates area by 1/cos^2(lat)). The
+   client owns the geometry, the server owns the measurement. */
+
+function editSnapshot() {
+  return JSON.parse(JSON.stringify(state.editGeo));
+}
+
+function pushUndo() {
+  state.editUndo.push(editSnapshot());
+  if (state.editUndo.length > 50) state.editUndo.shift();
+  $('undo-edit-btn').disabled = false;
+}
+
+function nextRoofId() {
+  const ids = state.editGeo.features.map((f) => +f.properties.id);
+  return (ids.length ? Math.max(...ids) : -1) + 1;
+}
+
+function refreshEditLayer() {
+  state.map.getSource('roofs').setData(state.editGeo);
+  const n = state.editGeo.features.length;
+  $('lt-count').textContent = `${n} roof${n === 1 ? '' : 's'}`;
+  const added = state.editGeo.features.filter((f) => f.properties.user_added).length;
+  const removed = Math.max(
+    (state.result?.geojson?.features?.length || 0) - (n - added), 0);
+
+  const bits = [];
+  if (added) bits.push(`${added} added`);
+  if (removed) bits.push(`${removed} removed`);
+  state.editDirty = bits.length > 0;
+
+  const status = $('edit-status');
+  status.textContent = state.drawingRoof
+    ? `Click to place corners · ${state.newVertices.length} so far · Enter to finish, Esc to cancel`
+    : state.editDirty
+      ? `${bits.join(', ')} — press Recalculate to update the estimate`
+      : 'Click a roof to select it, or Add to draw one the model missed.';
+  status.classList.toggle('dirty', state.editDirty && !state.drawingRoof);
+
+  $('apply-edit-btn').disabled = !state.editDirty;
+  $('reset-edit-btn').disabled = !state.editDirty;
+  $('del-roof-btn').disabled = state.selectedRoof == null;
+}
+
+function enterEditMode() {
+  if (!state.result) return;
+  state.editing = true;
+  state.editGeo = JSON.parse(JSON.stringify(state.result.geojson));
+  state.editUndo = [];
+  state.selectedRoof = null;
+  state.editDirty = false;
+  $('edit-tools').hidden = false;
+  $('edit-btn').hidden = true;
+  $('undo-edit-btn').disabled = true;
+  document.getElementById('map').classList.add('map-editing');
+  refreshEditLayer();
+}
+
+function exitEditMode() {
+  cancelDrawRoof();
+  state.editing = false;
+  state.selectedRoof = null;
+  highlightRoof(-1, false);
+  $('edit-tools').hidden = true;
+  $('edit-btn').hidden = false;
+  const map = document.getElementById('map');
+  map.classList.remove('map-editing', 'map-drawing');
+  // Leave whatever geometry is on screen in place — the user may have
+  // recalculated already, and silently reverting their work would be worse
+  // than leaving it visible.
+  if (state.result) $('lt-count').textContent =
+    `${state.result.geojson.features.length} roof${state.result.geojson.features.length === 1 ? '' : 's'}`;
+}
+
+function selectRoof(id) {
+  state.selectedRoof = id;
+  highlightRoof(id, true);
+  refreshEditLayer();
+}
+
+function deleteSelectedRoof() {
+  if (state.selectedRoof == null) return;
+  pushUndo();
+  state.editGeo.features = state.editGeo.features.filter(
+    (f) => +f.properties.id !== state.selectedRoof);
+  state.selectedRoof = null;
+  highlightRoof(-1, false);
+  refreshEditLayer();
+}
+
+function startDrawRoof() {
+  state.drawingRoof = true;
+  state.newVertices = [];
+  state.selectedRoof = null;
+  highlightRoof(-1, false);
+  document.getElementById('map').classList.add('map-drawing');
+  renderDrawPreview();
+  refreshEditLayer();
+}
+
+function cancelDrawRoof() {
+  state.drawingRoof = false;
+  state.newVertices = [];
+  document.getElementById('map').classList.remove('map-drawing');
+  if (state.map?.getSource('draw')) state.map.getSource('draw').setData(emptyFC());
+  if (state.editing) refreshEditLayer();
+}
+
+function renderDrawPreview() {
+  const feats = state.newVertices.map((v) => ({
+    type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: v },
+  }));
+  if (state.newVertices.length >= 2) {
+    feats.push({
+      type: 'Feature', properties: {},
+      geometry: { type: 'LineString',
+                  coordinates: state.newVertices.concat([state.newVertices[0]]) },
+    });
+  }
+  state.map.getSource('draw').setData({ type: 'FeatureCollection', features: feats });
+}
+
+function commitNewRoof() {
+  if (state.newVertices.length < 3) { cancelDrawRoof(); return; }
+  pushUndo();
+  const ring = state.newVertices.concat([state.newVertices[0]]);
+  const id = nextRoofId();
+  state.editGeo.features.push({
+    type: 'Feature',
+    id,
+    geometry: { type: 'Polygon', coordinates: [ring] },
+    properties: {
+      id,
+      // Left null on purpose: the server measures the area, and a placeholder
+      // here would show the user a number that is not the one used.
+      roof_area_m2: null,
+      usable_area_m2: null,
+      confidence: null,
+      user_added: true,
+    },
+  });
+  cancelDrawRoof();
+  refreshEditLayer();
+}
+
+function undoEdit() {
+  const prev = state.editUndo.pop();
+  if (!prev) return;
+  state.editGeo = prev;
+  state.selectedRoof = null;
+  highlightRoof(-1, false);
+  $('undo-edit-btn').disabled = state.editUndo.length === 0;
+  refreshEditLayer();
+}
+
+function resetEdits() {
+  pushUndo();
+  state.editGeo = JSON.parse(JSON.stringify(state.result.geojson));
+  state.selectedRoof = null;
+  highlightRoof(-1, false);
+  refreshEditLayer();
+}
+
+async function applyEdits() {
+  const btn = $('apply-edit-btn');
+  btn.disabled = true;
+  $('edit-status').textContent = 'recalculating…';
+  try {
+    const body = { ...payload(), geojson: state.editGeo };
+    delete body.zoom; delete body.threshold; delete body.tta;
+    delete body.use_calibration;
+    const r = await fetch('/api/recalculate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) throw new Error((await r.json()).detail || `HTTP ${r.status}`);
+    const res = await r.json();
+
+    // Keep everything the recalculation does not speak to — the coverage note,
+    // the calibration audit trail, the model card — and replace only what the
+    // user's geometry actually changed.
+    const merged = {
+      ...state.result,
+      summary: res.summary,
+      solar_resource: res.solar_resource,
+      assumptions: res.assumptions,
+      warnings: res.warnings,
+      geojson: state.editGeo,
+      edited: true,
+    };
+    renderResult(merged);
+    state.editGeo = JSON.parse(JSON.stringify(merged.geojson));
+    state.editDirty = false;
+    refreshEditLayer();
+    $('edit-status').textContent = 'Estimate updated from your edits.';
+  } catch (e) {
+    $('edit-status').textContent = e.message;
+    btn.disabled = false;
+  }
+}
+
 function payload() {
   const tilt = $('tilt').value.trim();
   return {
@@ -1064,6 +1342,14 @@ function hideError() { $('error-box').hidden = true; }
 
 function renderResult(res) {
   state.result = res;
+  if (!res.edited) {
+    // A fresh detection replaces anything the user had been editing.
+    state.editGeo = null;
+    state.editUndo = [];
+    state.editDirty = false;
+    state.selectedRoof = null;
+    if (state.editing) exitEditMode();
+  }
   const s = res.summary;
   const sym = s.currency_symbol || '';
 
@@ -1088,7 +1374,12 @@ function renderResult(res) {
       <p>${esc(cov.note)}</p>
     </div>` : '';
 
-  $('warnings').innerHTML = covHtml + (res.warnings || [])
+  const editedHtml = res.edited
+    ? `<div class="warn-item"><b>These numbers come from your corrected
+        roofs</b>, not the model's own output. Detection settings below
+        describe the original run.</div>`
+    : '';
+  $('warnings').innerHTML = covHtml + editedHtml + (res.warnings || [])
     .map((w) => `<div class="warn-item">${esc(w)}</div>`).join('');
 
   // Cards
@@ -1144,9 +1435,14 @@ function renderResult(res) {
   $('roof-count').textContent = feats.length;
   const rows = feats.slice(0, 300).map((f) => {
     const p = f.properties;
+    // A roof the user drew has no model area or confidence until the server
+    // has measured it, and an em dash is more honest than a fabricated 0.00.
+    const area = p.roof_area_m2 == null ? '—' : fmtInt(p.roof_area_m2);
+    const usable = p.usable_area_m2 == null ? '—' : fmtInt(p.usable_area_m2);
+    const conf = p.confidence == null
+      ? (p.user_added ? 'yours' : '—') : (+p.confidence).toFixed(2);
     return `<tr data-id="${p.id}">
-      <td>${p.id}</td><td>${fmtInt(p.roof_area_m2)}</td>
-      <td>${fmtInt(p.usable_area_m2)}</td><td>${(+p.confidence).toFixed(2)}</td></tr>`;
+      <td>${p.id}</td><td>${area}</td><td>${usable}</td><td>${conf}</td></tr>`;
   }).join('');
   const tbody = document.querySelector('#roof-table tbody');
   tbody.innerHTML = rows || '<tr><td colspan="4">nothing detected</td></tr>';
@@ -1183,7 +1479,8 @@ function renderResult(res) {
     ['Detection threshold', `${res.detection.threshold}`
       + (res.detection.threshold_auto ? ' (auto for this region)' : ' (you set this)')],
     ['High accuracy (TTA)', res.detection.tta ? 'on' : 'off'],
-    ['Mean confidence', s.mean_confidence],
+    ['Mean confidence', s.mean_confidence == null ? 'n/a (edited by hand)'
+                                                    : s.mean_confidence],
     ['Roof coverage of AOI', s.roof_coverage_pct + '%'],
   ].map(([k, v]) => `<div class="kv-row"><span>${k}</span><span>${esc(String(v))}</span></div>`).join('');
 }

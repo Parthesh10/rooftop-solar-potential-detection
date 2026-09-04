@@ -668,3 +668,16 @@ tbody tr.hl { background: rgba(245,166,35,.14); }
   background: rgba(248,81,73,.10); border: 1px solid rgba(248,81,73,.35);
   font-size: 11.5px; color: var(--text);
 }
+
+
+/* ─────────────────────── Roof correction (edit mode) ─────────────────────── */
+.lt-edit { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
+.lt-edit .btn { width: 100%; }
+.lt-edit .btn-row .btn { width: auto; flex: 1; }
+#edit-tools { margin-top: 8px; display: flex; flex-direction: column; gap: 7px; }
+#edit-status { margin: 0; }
+#edit-status.dirty { color: var(--accent-2); }
+
+/* The map cursor is the main signal for which sub-mode is active. */
+.map-editing   .maplibregl-canvas-container { cursor: pointer !important; }
+.map-drawing   .maplibregl-canvas-container { cursor: crosshair !important; }

@@ -36,7 +36,16 @@ from webapp.tiles import TileGrid
 GEOD = Geod(ellps="WGS84")
 
 __all__ = ["Building", "clean_mask", "mask_to_buildings", "polygon_area_m2",
-           "point_in_ring", "buildings_to_geojson"]
+           "point_in_ring", "buildings_to_geojson", "polygon_rings_area_m2",
+           "geojson_polygon_areas", "MAX_EDITED_FEATURES", "MAX_RING_VERTICES"]
+
+# Guard rails for user-supplied geometry (the edit-and-recalculate path). A
+# hand-edited FeatureCollection arrives straight from a browser, so it is
+# untrusted input: without caps, one pasted request can pin a CPU on geodesic
+# integration. These are far above anything a person draws by hand — a 256-tile
+# AOI rarely yields 300 roofs.
+MAX_EDITED_FEATURES = 5000
+MAX_RING_VERTICES = 10_000
 
 
 @dataclass
@@ -193,6 +202,97 @@ def buildings_to_geojson(buildings: list[Building], packing_factor: float) -> di
         "features": [b.to_feature(i, packing_factor)
                      for i, b in enumerate(buildings)],
     }
+
+
+def polygon_rings_area_m2(rings: list[list[tuple[float, float]]]) -> float:
+    """Geodesic area of a GeoJSON-style ring list: exterior minus its holes.
+
+    Mirrors what :func:`mask_to_buildings` does with the contour hierarchy — a
+    courtyard is not roof — so an edited polygon and a detected one are measured
+    by identical rules.
+    """
+    if not rings:
+        return 0.0
+    area = polygon_area_m2(rings[0])
+    for hole in rings[1:]:
+        area -= polygon_area_m2(hole)
+    return max(area, 0.0)
+
+
+def _coerce_ring(raw) -> list[tuple[float, float]]:
+    """One GeoJSON ring -> [(lon, lat), ...], or [] if it is not usable.
+
+    Deliberately strict: a ring that is not a list of numeric lon/lat pairs in
+    range is dropped rather than coerced, because a silently mis-parsed
+    coordinate becomes a wrong roof area and then a wrong money figure.
+    """
+    if not isinstance(raw, (list, tuple)) or len(raw) < 3:
+        return []
+    if len(raw) > MAX_RING_VERTICES:
+        raise ValueError(
+            f"a polygon ring has {len(raw)} vertices (limit "
+            f"{MAX_RING_VERTICES})")
+    ring: list[tuple[float, float]] = []
+    for pt in raw:
+        if not isinstance(pt, (list, tuple)) or len(pt) < 2:
+            return []
+        lon, lat = pt[0], pt[1]
+        if isinstance(lon, bool) or isinstance(lat, bool):
+            return []
+        if not isinstance(lon, (int, float)) or not isinstance(lat, (int, float)):
+            return []
+        if not (-180.0 <= lon <= 180.0 and -90.0 <= lat <= 90.0):
+            return []
+        ring.append((float(lon), float(lat)))
+    return ring
+
+
+def geojson_polygon_areas(geojson: dict) -> list[float]:
+    """Per-feature geodesic areas (m^2) for a FeatureCollection of Polygons.
+
+    Accepts what ``buildings_to_geojson`` emits, so the UI can send back a
+    round-tripped, user-edited version of exactly what it was given. Features
+    that are not usable polygons contribute 0.0 rather than raising: a user who
+    deletes every roof should get an honest zero, not an error page.
+    """
+    if not isinstance(geojson, dict):
+        raise ValueError("geojson must be an object")
+    features = geojson.get("features")
+    if features is None and geojson.get("type") == "Polygon":
+        features = [{"type": "Feature", "geometry": geojson}]
+    if not isinstance(features, list):
+        raise ValueError("geojson has no 'features' list")
+    if len(features) > MAX_EDITED_FEATURES:
+        raise ValueError(
+            f"{len(features)} features (limit {MAX_EDITED_FEATURES})")
+
+    areas: list[float] = []
+    for feat in features:
+        if not isinstance(feat, dict):
+            areas.append(0.0)
+            continue
+        geom = feat.get("geometry") if "geometry" in feat else feat
+        if not isinstance(geom, dict):
+            areas.append(0.0)
+            continue
+
+        gtype = geom.get("type")
+        coords = geom.get("coordinates")
+        if gtype == "Polygon" and isinstance(coords, list):
+            polys = [coords]
+        elif gtype == "MultiPolygon" and isinstance(coords, list):
+            polys = [c for c in coords if isinstance(c, list)]
+        else:
+            areas.append(0.0)
+            continue
+
+        total = 0.0
+        for poly in polys:
+            rings = [r for r in (_coerce_ring(x) for x in poly) if r]
+            total += polygon_rings_area_m2(rings)
+        areas.append(total)
+
+    return areas
 
 
 def bounds_area_m2(west: float, south: float, east: float, north: float) -> float:

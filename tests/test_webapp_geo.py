@@ -202,3 +202,108 @@ def test_geojson_carries_usable_area_at_the_packing_factor(grid):
     p = fc["features"][0]["properties"]
     assert p["usable_area_m2"] == pytest.approx(p["roof_area_m2"] * 0.75, rel=1e-3)
     assert fc["features"][0]["geometry"]["type"] == "Polygon"
+
+
+# --------------------------------------------------------------------------- #
+# User-edited geometry: GeoJSON in, geodesic area out
+# --------------------------------------------------------------------------- #
+def _square_fc(west, south, side_deg, n=1):
+    feats = []
+    for i in range(n):
+        w = west + i * side_deg * 2
+        ring = [[w, south], [w + side_deg, south],
+                [w + side_deg, south + side_deg], [w, south + side_deg], [w, south]]
+        feats.append({"type": "Feature", "properties": {"id": i},
+                      "geometry": {"type": "Polygon", "coordinates": [ring]}})
+    return {"type": "FeatureCollection", "features": feats}
+
+
+def test_geojson_area_matches_the_polygon_measurement():
+    """The edit path must measure exactly like the detection path."""
+    fc = _square_fc(77.6, 12.9, 0.0009)
+    ring = [tuple(p) for p in fc["features"][0]["geometry"]["coordinates"][0]]
+    assert geometry.geojson_polygon_areas(fc)[0] == pytest.approx(
+        geometry.polygon_area_m2(ring), rel=1e-9)
+
+
+def test_geojson_area_is_not_mercator():
+    """Same square shape, two latitudes: real area must barely differ."""
+    low = geometry.geojson_polygon_areas(_square_fc(0.0, 0.0, 0.001))[0]
+    high = geometry.geojson_polygon_areas(_square_fc(0.0, 59.0, 0.001))[0]
+    # A Mercator area would be ~3.8x larger at 59N; on the ellipsoid the
+    # north-south extent is nearly unchanged and only the east-west shrinks.
+    assert high < low
+    assert high / low == pytest.approx(math.cos(math.radians(59.0)), rel=0.02)
+
+
+def test_geojson_area_subtracts_holes():
+    outer = [[0.0, 0.0], [0.01, 0.0], [0.01, 0.01], [0.0, 0.01], [0.0, 0.0]]
+    hole = [[0.002, 0.002], [0.004, 0.002], [0.004, 0.004], [0.002, 0.004],
+            [0.002, 0.002]]
+    solid = {"type": "FeatureCollection", "features": [
+        {"type": "Feature", "properties": {},
+         "geometry": {"type": "Polygon", "coordinates": [outer]}}]}
+    holed = {"type": "FeatureCollection", "features": [
+        {"type": "Feature", "properties": {},
+         "geometry": {"type": "Polygon", "coordinates": [outer, hole]}}]}
+    assert (geometry.geojson_polygon_areas(holed)[0]
+            < geometry.geojson_polygon_areas(solid)[0])
+
+
+def test_geojson_area_sums_multiple_features():
+    areas = geometry.geojson_polygon_areas(_square_fc(77.6, 12.9, 0.0009, n=3))
+    assert len(areas) == 3
+    assert all(a == pytest.approx(areas[0], rel=1e-6) for a in areas)
+
+
+def test_geojson_area_handles_multipolygon():
+    ring_a = [[0.0, 0.0], [0.001, 0.0], [0.001, 0.001], [0.0, 0.001], [0.0, 0.0]]
+    ring_b = [[0.01, 0.0], [0.011, 0.0], [0.011, 0.001], [0.01, 0.001], [0.01, 0.0]]
+    fc = {"type": "FeatureCollection", "features": [
+        {"type": "Feature", "properties": {},
+         "geometry": {"type": "MultiPolygon", "coordinates": [[ring_a], [ring_b]]}}]}
+    single = geometry.geojson_polygon_areas(
+        {"type": "FeatureCollection", "features": [
+            {"type": "Feature", "properties": {},
+             "geometry": {"type": "Polygon", "coordinates": [ring_a]}}]})[0]
+    assert geometry.geojson_polygon_areas(fc)[0] == pytest.approx(2 * single, rel=1e-6)
+
+
+def test_an_empty_edit_is_zero_not_an_error():
+    """A user who deletes every roof deserves an honest zero."""
+    assert geometry.geojson_polygon_areas(
+        {"type": "FeatureCollection", "features": []}) == []
+
+
+@pytest.mark.parametrize("bad_geom", [
+    {"type": "Point", "coordinates": [1.0, 2.0]},
+    {"type": "Polygon", "coordinates": [[[0, 0], [1, 1]]]},        # < 3 points
+    {"type": "Polygon", "coordinates": [[[0, 0], [1, 1], "nope"]]},
+    {"type": "Polygon", "coordinates": [[[0, 0], [1, 1], [999, 0]]]},  # lon > 180
+    {"type": "Polygon", "coordinates": "not-a-list"},
+])
+def test_unusable_geometry_contributes_zero_rather_than_raising(bad_geom):
+    fc = {"type": "FeatureCollection",
+          "features": [{"type": "Feature", "properties": {}, "geometry": bad_geom}]}
+    assert geometry.geojson_polygon_areas(fc) == [0.0]
+
+
+def test_geojson_area_rejects_a_malformed_collection():
+    with pytest.raises(ValueError):
+        geometry.geojson_polygon_areas({"nope": 1})
+
+
+def test_geojson_area_caps_absurd_input():
+    """Untrusted browser input must not be able to pin a CPU."""
+    too_many = {"type": "FeatureCollection",
+                "features": [{"type": "Feature", "properties": {},
+                              "geometry": {"type": "Polygon", "coordinates": []}}]
+                * (geometry.MAX_EDITED_FEATURES + 1)}
+    with pytest.raises(ValueError, match="limit"):
+        geometry.geojson_polygon_areas(too_many)
+
+    huge_ring = [[0.0, 0.0]] * (geometry.MAX_RING_VERTICES + 1)
+    with pytest.raises(ValueError, match="vertices"):
+        geometry.geojson_polygon_areas({"type": "FeatureCollection", "features": [
+            {"type": "Feature", "properties": {},
+             "geometry": {"type": "Polygon", "coordinates": [huge_ring]}}]})

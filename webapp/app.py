@@ -86,16 +86,15 @@ class Bounds(BaseModel):
         return v
 
 
-class AnalyzeRequest(BaseModel):
-    bounds: Bounds
-    zoom: int = Field(SERVING_ZOOM, ge=16, le=21)
-    threshold: float | None = Field(None, ge=0.05, le=0.95)
-    tta: bool = Field(False, description="8x dihedral test-time augmentation: "
-                                         "+1 IoU / +2 precision for 8x the time")
-    use_calibration: bool = Field(
-        True, description="apply the per-area detection calibration "
-                          "(regional band, stored measurement, histogram). "
-                          "Ignored when 'threshold' is set by hand.")
+class SolarInputs(BaseModel):
+    """Everything downstream of the roof polygons.
+
+    Shared by /api/analyze and /api/recalculate so the two cannot drift: a user
+    who corrects the detection must get their estimate from the same assumptions
+    and the same arithmetic, or the "before" and "after" numbers are not
+    comparable and the edit feature is worse than useless.
+    """
+
     packing_factor: float = Field(0.75, ge=0.1, le=1.0)
     module_efficiency: float = Field(0.20, ge=0.05, le=0.30)
     system_losses_pct: float = Field(14.0, ge=0.0, le=50.0)
@@ -107,7 +106,6 @@ class AnalyzeRequest(BaseModel):
     grid_emission_kg_per_kwh: float = Field(0.71, ge=0.0, le=2.0)
     currency: str = "INR"
     currency_symbol: str = "₹"
-    tile_provider: str | None = None
 
     def solar_params(self) -> SolarParams:
         return SolarParams(
@@ -125,7 +123,37 @@ class AnalyzeRequest(BaseModel):
         )
 
 
-class CalibrateRequest(BaseModel):
+class AnalyzeRequest(SolarInputs):
+    bounds: Bounds
+    zoom: int = Field(SERVING_ZOOM, ge=16, le=21)
+    threshold: float | None = Field(None, ge=0.05, le=0.95)
+    tta: bool = Field(False, description="8x dihedral test-time augmentation: "
+                                         "+1 IoU / +2 precision for 8x the time")
+    use_calibration: bool = Field(
+        True, description="apply the per-area detection calibration "
+                          "(regional band, stored measurement, histogram). "
+                          "Ignored when 'threshold' is set by hand.")
+    tile_provider: str | None = None
+
+
+class RecalculateRequest(SolarInputs):
+    """Re-run the solar chain over roof polygons the user has corrected.
+
+    No imagery and no model — just geometry and arithmetic — so this is a plain
+    synchronous request rather than a job. That also makes it the honest escape
+    hatch for the model's known weaknesses: outside the training regions it
+    misses buildings outright (CLAUDE.md fact 20), and no threshold recovers
+    them. Letting a user draw what the model missed means the estimate stops
+    depending on the part of the system that is worst.
+    """
+
+    geojson: dict = Field(..., description="FeatureCollection of roof polygons, "
+                                           "in the shape /api/analyze returns")
+    bounds: Bounds = Field(..., description="AOI, for the PVGIS lookup point")
+
+
+@dataclass
+class Job:
     """Measure the right detection threshold for one AOI against real roofs."""
 
     bounds: Bounds
@@ -533,6 +561,59 @@ async def region_profile(lat: float, lon: float):
     return {"region": region.to_dict(), "coverage": cov,
             "calibration": cal.to_dict(),
             "lat": round(lat, 4), "lon": round(lon, 4)}
+
+
+@app.post("/api/recalculate")
+async def recalculate(req: RecalculateRequest):
+    """Roof polygons in, full estimate out. The edit-and-recompute path."""
+    try:
+        areas = geometry.geojson_polygon_areas(req.geojson)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+    b = req.bounds
+    centre_lat = (b.north + b.south) / 2.0
+    centre_lon = (b.east + b.west) / 2.0
+    params = req.solar_params()
+
+    total_roof = float(sum(areas))
+    counted = sum(1 for a in areas if a > 0)
+
+    loop = asyncio.get_running_loop()
+    est = await loop.run_in_executor(
+        None, lambda: solar.estimate(total_roof, centre_lat, centre_lon, params))
+    resource = await loop.run_in_executor(
+        None, lambda: solar.pvgis_radiation(centre_lat, centre_lon))
+
+    aoi_area = geometry.bounds_area_m2(b.west, b.south, b.east, b.north)
+    warnings = list(solar.sanity_check_capacity(est["capacity_kwp"]))
+    if counted == 0:
+        warnings.append(
+            "No roof polygons — the estimate is zero. Draw at least one roof, "
+            "or re-run detection.")
+    dropped = len(areas) - counted
+    if dropped:
+        warnings.append(
+            f"{dropped} shape{'' if dropped == 1 else 's'} had no usable "
+            f"polygon geometry and contributed nothing to the area.")
+
+    return {
+        "solar_resource": {**resource,
+                           "lat": round(centre_lat, 4),
+                           "lon": round(centre_lon, 4)},
+        "summary": {
+            **est,
+            "building_count": counted,
+            "aoi_area_m2": round(aoi_area, 0),
+            "roof_coverage_pct": round(100 * total_roof / aoi_area, 1)
+            if aoi_area > 0 else 0.0,
+            "mean_confidence": None,     # user-drawn geometry has no model score
+        },
+        "assumptions": params.to_dict(),
+        "warnings": warnings,
+        "edited": True,
+        "bounds": b.model_dump(),
+    }
 
 
 @app.get("/api/model")

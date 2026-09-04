@@ -257,6 +257,23 @@
         <span class="lt-swatch"></span>
         <span>low → high confidence</span>
       </div>
+
+      <div class="lt-edit">
+        <button id="edit-btn" class="btn btn-ghost btn-sm">Correct the roofs</button>
+        <div id="edit-tools" hidden>
+          <p class="hint tiny" id="edit-status"></p>
+          <div class="btn-row tight">
+            <button id="add-roof-btn" class="btn btn-ghost btn-sm">+ Add</button>
+            <button id="del-roof-btn" class="btn btn-ghost btn-sm" disabled>Delete</button>
+            <button id="undo-edit-btn" class="btn btn-ghost btn-sm" disabled>Undo</button>
+            <button id="reset-edit-btn" class="btn btn-ghost btn-sm" disabled>Reset</button>
+          </div>
+          <button id="apply-edit-btn" class="btn btn-run btn-sm" disabled>
+            Recalculate from my edits
+          </button>
+          <button id="edit-done-btn" class="btn btn-ghost btn-sm">Done</button>
+        </div>
+      </div>
     </div>
   </main>
 
