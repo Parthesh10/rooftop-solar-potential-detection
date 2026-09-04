@@ -43,6 +43,9 @@ Config: `--window 512 --samples-per-tile 48 --pos-weight 2.4 --dice-weight 0.6
 | **I2** | **U-Net++ / efficientnet-b0** | 49 | **0.7233** | 0.818 | 0.823 | 0.857 |
 | I1 | U-Net / resnet34 | 59 | 0.7178 | 0.813 | 0.824 | 0.850 |
 
+*(These are the per-window means the training loop printed. Pooled, I2 is
+0.7712 — see "Post-hoc tuning" below. I1 was not re-measured pooled.)*
+
 Both cleared the target; effb0 wins by 0.6 points at **a quarter the parameters**
 (6.6 M vs 24.4 M), which is why it ships — smaller model, faster inference,
 better score.
@@ -210,7 +213,8 @@ duration.
 
 | date | model | dataset | IoU | notes |
 |---|---|---|---|---|
-| 2026-09-03 | **U-Net++ / effb0** | **Inria val** | **0.7233** | **shipped model** |
+| 2026-09-04 | **U-Net++ / effb0** | **Inria val (pooled)** | **0.7712** | **shipped model** — 0.7809 with TTA |
+| 2026-09-03 | U-Net++ / effb0 | Inria val (per-window) | 0.7233 | same model, weaker averaging |
 | 2026-09-03 | U-Net / resnet34 | Inria val | 0.7178 | runner-up, 3.7× the params |
 | 2026-08-29 | U-Net / resnet34 | Swiss test | 0.5653 | encoder sweep; ties scratch |
 | 2026-08-29 | U-Net / scratch (T4/fp16) | Swiss test | 0.5651 | same config as sweep D, +2 from hardware/noise |

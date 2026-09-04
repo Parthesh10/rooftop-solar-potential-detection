@@ -64,15 +64,55 @@ with the normalisation mean/std, window and threshold. This is the permanent fix
 for F-01, where training and inference normalised differently and every
 prediction was wrong.
 
+## Detection sensitivity — read this before changing it
+
+The decision threshold is **not** a fixed number. It is chosen per region by
+`coverage.THRESHOLD_BY_LEVEL`:
+
+| region | threshold |
+|---|---|
+| inside a training city | 0.50 |
+| near one (< 900 km) | 0.45 |
+| outside | 0.40 |
+
+Why: on Inria, 0.50 and 0.65 differ by 0.002 IoU — noise. Out of distribution
+the model is under-confident, and raising the threshold to 0.60 measurably cost
+**7–11% of detected roof area** across Bangalore and Bhopal. A threshold tuned
+on in-distribution data does not transfer, so do not "optimise" it on Inria
+again and ship the result globally. The UI discloses when the threshold was
+chosen automatically, and the slider overrides it.
+
+**TTA (the "High accuracy" toggle) is off by default** for the same reason:
+worth +0.010 IoU on Inria, but −5% detected area in Bangalore, at 8× the cost.
+
+## Solar exposure
+
+Every result includes the location's **solar resource**, independent of the roof
+or the system — the number that makes two places comparable. From PVGIS
+`MRcalc`, averaged over the 2005–2020 climatology: monthly horizontal
+irradiation (GHI), monthly optimal-plane irradiation, and monthly mean air
+temperature.
+
+| | annual GHI | peak sun hours | lowest month |
+|---|---|---|---|
+| Bangalore | 1934 kWh/m² | 5.3 h/day | July |
+| Bhopal | 1872 kWh/m² | 5.1 h/day | **August (monsoon)** |
+| Austin | 1815 kWh/m² | 5.0 h/day | December |
+| Vienna | 1256 kWh/m² | 3.4 h/day | December |
+
+Also available standalone at `GET /api/solar-resource?lat=..&lon=..`, so the
+resource can be shown without running a detection.
+
 ## Honesty features
 
 These are not decoration — they are the difference between a tool people can
 trust and one that just looks confident.
 
 * **Coverage banner.** Every result says whether the area is inside, near, or
-  outside the model's training region. Verified by eye: Austin (a training city)
-  segments cleanly; Bhopal misses a substantial share of buildings. A user in
-  India is told that before they read the number.
+  outside the model's training region, and says when that changed the
+  threshold. Verified by eye: Austin (a training city) segments cleanly; Bhopal
+  and Bangalore miss buildings. A user in India is told before they read the
+  number.
 * **"This is an estimate, not a site survey"** at the top of every result.
 * **Per-roof confidence** — the model's mean predicted probability inside each
   polygon, not an invented score.
@@ -101,7 +141,8 @@ terms and a 200k tiles/month free tier.
 
 | route | |
 |---|---|
-| `POST /api/analyze` | → `202 {job_id}` |
+| `POST /api/analyze` | → `202 {job_id}`; `threshold` null = auto by region, `tta` bool |
+| `GET /api/solar-resource?lat=&lon=` | monthly GHI / tilt-plane / temperature |
 | `GET /api/jobs/{id}` | job state, progress, result |
 | `GET /api/model` | model card: architecture, metrics, limitations |
 | `GET /api/assumptions` | defaults + the source of each |

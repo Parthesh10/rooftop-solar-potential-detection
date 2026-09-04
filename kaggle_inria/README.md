@@ -36,6 +36,18 @@ kernel run, so for a genuine multi-session resume, pull the run's `state.pt`
 from `kernels output` and add it back as an input, or lower `samples_per_tile` /
 `epochs` so one session finishes. First runs so far complete in one session.
 
+## Status
+
+Round 1 (2026-09-03) **completed**: U-Net++/EfficientNet-B0 and U-Net/ResNet34,
+60 epochs each, ~4.8 h/config. effb0 won and is the shipped model — pooled Inria
+val IoU **0.7712**. Artifacts are in `results/`.
+
+`_gen_notebook.py` now holds a **staged, not-yet-run round 2**: EfficientNet-B3
+against an EfficientNet-B0 control, `--data-parallel` across both T4s, ~10 h
+total. It tests whether the remaining gap to published work (0.78–0.82) is model
+capacity. Pushing this kernel will start that run — edit `SWEEP` first if you
+want something else.
+
 ## Target
 
 Inria official val IoU **≥ 0.72** (`plan.md` §4.3). Published building-seg work
