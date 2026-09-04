@@ -116,25 +116,37 @@ CELL_TRAIN = """RUNS = WORK / "runs"
 RUNS.mkdir(exist_ok=True)
 os.environ["RUNS_ROOT"] = str(RUNS)
 
-# Inria training. Two contenders carried over from the Swiss encoder sweep
-# (kaggle/): resnet34 tied the scratch net there and effb0 was mid-pack, but
-# that sweep was data-starved (420 tiles) - Inria has ~100x the effective data,
-# so the encoder comparison is worth redoing here. samples_per_tile 48 ->
-# 155*48 = 7440 windows/epoch; a pretrained encoder converges inside 60 epochs.
+# Round 2. Round 1 (effb0, 60 ep, spt 48) gave pooled val IoU 0.7712 at
+# threshold 0.5, and a post-hoc threshold+TTA sweep lifted that to 0.7809 for
+# free. Published Inria work sits ~0.78-0.82, so the remaining headroom is model
+# capacity, not tuning.
+#
+# The bet: effb0 is only 6.6 M parameters. Give it more capacity (effb3, 12 M)
+# and more optimiser steps per epoch, and see whether either moves the number.
+# V2 is the control - same encoder as the shipped model, only spt and epochs
+# change - so a gain from V1 is attributable to capacity rather than to the
+# longer schedule.
+#
+# DataParallel across the T4 x2 is what makes two configs fit the 12 h cap;
+# without it this is ~19 h. train.unwrap() strips the wrapper before saving so
+# the checkpoints still load into a plain single-GPU model.
 SWEEP = [
-    ("I1_unet_rn34",    ["--arch", "unet",   "--encoder", "resnet34"],
-     "U-Net + ResNet34/ImageNet"),
-    ("I2_unetpp_effb0", ["--arch", "unet++", "--encoder", "efficientnet-b0"],
-     "U-Net++ + EfficientNet-B0/ImageNet (the report's arch, modernised)"),
+    ("V1_unetpp_effb3", ["--arch", "unet++", "--encoder", "efficientnet-b3",
+                         "--samples-per-tile", "64", "--epochs", "50"],
+     "U-Net++ + EfficientNet-B3 - 2x the capacity of the shipped model"),
+    ("V2_unetpp_effb0", ["--arch", "unet++", "--encoder", "efficientnet-b0",
+                         "--samples-per-tile", "96", "--epochs", "50"],
+     "U-Net++ + EfficientNet-B0, 2x the steps - the control"),
 ]
 
 BASE = [sys.executable, "-u", "scripts/train_inria.py",
         "--inria-root", str(INRIA),
         "--encoder-weights", "imagenet",
-        "--window", "512", "--samples-per-tile", "48", "--val-stride", "512",
+        "--window", "512", "--val-stride", "512",
         "--pos-weight", "2.4", "--dice-weight", "0.6",
-        "--epochs", "60", "--batch-size", "16", "--lr", "3e-4",
+        "--batch-size", "16", "--lr", "3e-4",
         "--workers", "2", "--patience", "12", "--amp", "auto",
+        "--data-parallel",
         "--gpu-util-target", "100", "--gpu-temp-limit", "0",
         "--gpu-mem-fraction", "0.95", "--checkpoint-every", "300",
         "--no-progress"]

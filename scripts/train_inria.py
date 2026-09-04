@@ -49,7 +49,7 @@ from loss.losses import build_loss
 from model.registry import build_model, model_spec, recommended_stats_key
 from process_data.inria import InriaWindowDataset
 from process_data.split import inria_official_split
-from train.train import build_optimizer, build_scheduler, training_model
+from train.train import build_optimizer, build_scheduler, training_model, unwrap
 from utils import count_parameters, get_device, seed_torch
 
 
@@ -145,6 +145,9 @@ def main() -> None:
     ap.add_argument("--gpu-temp-limit", type=float, default=78.0)
     ap.add_argument("--checkpoint-every", type=float, default=120.0)
     ap.add_argument("--no-progress", action="store_true")
+    ap.add_argument("--data-parallel", action="store_true",
+                    help="split each batch across all visible GPUs. Kaggle hands "
+                         "out a T4 x2, and using only one wastes half the quota")
     args = ap.parse_args()
 
     if args.window % 32:
@@ -181,14 +184,28 @@ def main() -> None:
     batch_size = args.batch_size
     ds, loaders = build_inria_loaders(cfg, args.inria_root, batch_size, args.val_stride)
 
+    n_gpus = torch.cuda.device_count() if device.type == "cuda" else 0
+    use_dp = args.data_parallel and n_gpus > 1
+
     def make_model():
-        return build_model(cfg.arch, cfg.encoder, cfg.encoder_weights).to(device)
+        m = build_model(cfg.arch, cfg.encoder, cfg.encoder_weights).to(device)
+        # DataParallel replicates the module per GPU and splits the batch. Only
+        # the forward pass is parallel, so the win is ~1.8x on two cards, not 2x
+        # — but on a 12 h Kaggle cap that is the difference between one config
+        # and two. train.unwrap() strips the wrapper before every save so the
+        # checkpoint loads into a plain model.
+        return torch.nn.DataParallel(m) if use_dp else m
 
     model = make_model()
     enc = "scratch" if cfg.encoder in (None, "scratch") else (
         f"{cfg.encoder} ({cfg.encoder_weights or 'random init'})")
     print(f"model:  {cfg.arch} / {enc}, norm='{cfg.stats_key}', "
           f"{count_parameters(model):,} trainable parameters")
+    if use_dp:
+        print(f"        DataParallel across {n_gpus} GPUs "
+              f"(batch {cfg.batch_size} -> {cfg.batch_size // n_gpus} each)")
+    elif args.data_parallel:
+        print(f"        --data-parallel ignored: {n_gpus} GPU(s) visible")
 
     loss_fn = build_loss(cfg, loader=loaders["train"], device=device)
     optimizer = build_optimizer(model, cfg)
@@ -221,7 +238,10 @@ def main() -> None:
 
     best = Path(history.run_dir) / "best.pt"
     if best.exists():
-        model.load_state_dict(torch.load(best, map_location=device, weights_only=True))
+        # unwrap: best.pt is saved from the bare module, so it has no
+        # "module." prefix and will not load into the DataParallel wrapper.
+        unwrap(model).load_state_dict(
+            torch.load(best, map_location=device, weights_only=True))
         print(f"\nloaded best checkpoint (epoch {history.best_epoch})")
 
     print("\n=== final metrics (Inria official val, correct eval harness) ===")

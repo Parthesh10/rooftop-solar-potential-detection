@@ -54,6 +54,7 @@ __all__ = [
     "build_optimizer",
     "build_scheduler",
     "save_checkpoint",
+    "unwrap",
 ]
 
 
@@ -147,6 +148,17 @@ def build_scheduler(
 # --------------------------------------------------------------------------- #
 # Checkpointing
 # --------------------------------------------------------------------------- #
+def unwrap(model: torch.nn.Module) -> torch.nn.Module:
+    """The real module behind a DataParallel / DistributedDataParallel wrapper.
+
+    Matters for checkpoints: a wrapped model's ``state_dict`` keys all carry a
+    ``module.`` prefix, so saving one produces weights that will not load into a
+    plain single-GPU model — and the failure only surfaces at inference time,
+    long after the GPU that produced them is gone.
+    """
+    return getattr(model, "module", model)
+
+
 def save_checkpoint(
     model: torch.nn.Module,
     run_dir: Path,
@@ -157,7 +169,7 @@ def save_checkpoint(
     run_dir = Path(run_dir)
     run_dir.mkdir(parents=True, exist_ok=True)
     path = run_dir / name
-    torch.save(model.state_dict(), path)
+    torch.save(unwrap(model).state_dict(), path)
     if metadata is not None:
         (run_dir / "metadata.json").write_text(
             json.dumps(metadata, indent=2, default=str), encoding="utf-8"
@@ -269,7 +281,7 @@ def training_model(
             print(f"[resume] nothing resumable found ({target}) — starting fresh")
         else:
             run_dir = target
-            model.load_state_dict(state["model"])
+            unwrap(model).load_state_dict(state["model"])
             if state.get("optimizer"):
                 optimizer.load_state_dict(state["optimizer"])
             if state.get("scheduler") and scheduler is not None:
@@ -328,7 +340,7 @@ def training_model(
 
     def _persist(epoch: int) -> None:
         save_state(
-            run_dir, model=model, optimizer=optimizer, scheduler=scheduler,
+            run_dir, model=unwrap(model), optimizer=optimizer, scheduler=scheduler,
             scaler=scaler, epoch=epoch, history=history.to_dict(),
             best_val_iou=history.best_val_iou, best_epoch=history.best_epoch,
             config=cfg.to_dict(),
