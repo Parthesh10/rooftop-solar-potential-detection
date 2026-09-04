@@ -28,15 +28,40 @@
       <section class="step" id="step-area">
         <div class="step-head"><span class="step-num">1</span><h2>Choose an area</h2></div>
 
-        <div class="search-row">
-          <input id="search-input" type="text" placeholder="Search a place or address…" autocomplete="off">
-          <button id="search-btn" title="Search">→</button>
+        <div class="search-box">
+          <div class="search-row">
+            <span class="search-ico" aria-hidden="true">
+              <svg viewBox="0 0 16 16" width="14" height="14" fill="none"
+                   stroke="currentColor" stroke-width="1.6">
+                <circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/>
+              </svg>
+            </span>
+            <input id="search-input" type="text" autocomplete="off" spellcheck="false"
+                   placeholder="Search an address, place or lat, lon"
+                   role="combobox" aria-expanded="false" aria-autocomplete="list"
+                   aria-controls="search-results">
+            <button id="search-clear" class="search-clear" title="Clear" hidden>✕</button>
+            <span id="search-spin" class="search-spin" hidden></span>
+          </div>
+          <div id="search-results" class="search-results" role="listbox" hidden></div>
         </div>
-        <div id="search-results" class="search-results" hidden></div>
 
         <div class="btn-row">
           <button id="draw-btn" class="btn btn-primary">
-            <span class="ico">▢</span> Draw area
+            <span class="ico" aria-hidden="true">
+              <svg viewBox="0 0 16 16" width="13" height="13" fill="none"
+                   stroke="currentColor" stroke-width="1.5">
+                <rect x="2.5" y="2.5" width="11" height="11" rx="1"
+                      stroke-dasharray="2.4 1.8"/>
+              </svg>
+            </span>
+            <span id="draw-label">Draw area</span>
+          </button>
+          <button id="here-btn" class="btn btn-ghost" title="Use my location">
+            <svg viewBox="0 0 16 16" width="13" height="13" fill="none"
+                 stroke="currentColor" stroke-width="1.5">
+              <circle cx="8" cy="8" r="3"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2"/>
+            </svg>
           </button>
           <button id="clear-btn" class="btn btn-ghost" disabled>Clear</button>
         </div>
@@ -122,18 +147,31 @@
           </p>
         </details>
 
+        <label class="switch" for="tta">
+          <input type="checkbox" id="tta">
+          <span class="switch-track"><span class="switch-thumb"></span></span>
+          <span class="switch-text">
+            <b>High accuracy</b>
+            <span>+1 IoU, +2 precision — but 8× slower</span>
+          </span>
+        </label>
+
         <details class="more">
           <summary>Detection sensitivity</summary>
           <div class="field">
             <label for="threshold">
               Threshold
+              <span id="threshold-auto" class="auto-tag">auto</span>
               <output id="threshold-out">0.50</output>
             </label>
             <input type="range" id="threshold" min="0.10" max="0.90" step="0.05" value="0.50">
           </div>
           <p class="hint tiny">
-            Lower catches more roof but more false positives. Higher is stricter.
-            0.5 is what the reported accuracy was measured at.
+            Lower catches more roof but more false positives; higher is stricter.
+            Left alone, this is chosen per region: <b>0.50</b> inside the
+            training cities, lower outside them, because the model is
+            under-confident on rooftops it was not trained on and a strict cut
+            deletes real buildings. Moving the slider overrides that.
           </p>
         </details>
       </section>
@@ -141,9 +179,16 @@
       <!-- Step 3 ─────────────────────────────────────── -->
       <section class="step">
         <div class="step-head"><span class="step-num">3</span><h2>Analyse</h2></div>
-        <button id="run-btn" class="btn btn-run" disabled>Detect rooftops</button>
+        <button id="run-btn" class="btn btn-run" disabled>
+          <span id="run-label">Detect rooftops</span>
+        </button>
         <div id="progress-wrap" hidden>
           <div class="progress"><div id="progress-bar"></div></div>
+          <div class="progress-steps">
+            <span data-stage="fetching">Imagery</span>
+            <span data-stage="detecting">Detect</span>
+            <span data-stage="measuring">Measure</span>
+          </div>
           <p id="progress-msg" class="hint"></p>
         </div>
         <div id="error-box" class="error" hidden></div>
@@ -152,7 +197,12 @@
     </div><!-- /panel-scroll -->
 
     <footer class="sidebar-foot">
-      <button class="link-btn" id="about-btn">Model &amp; method</button>
+      <div class="foot-links">
+        <button class="link-btn" id="about-btn">Model &amp; method</button>
+        <span class="foot-keys">
+          <kbd>/</kbd> search <kbd>D</kbd> draw <kbd>↵</kbd> run
+        </span>
+      </div>
       <span id="attribution"></span>
     </footer>
   </aside>
@@ -163,11 +213,36 @@
 
     <div id="map-badge" class="map-badge" hidden></div>
 
+    <!-- First-run guidance; dismissed permanently once an analysis has run -->
+    <div id="onboard" class="onboard">
+      <div class="onboard-card">
+        <span class="onboard-step"><b>1</b> Find your place</span>
+        <span class="onboard-arrow">→</span>
+        <span class="onboard-step"><b>2</b> Draw a box <kbd>D</kbd></span>
+        <span class="onboard-arrow">→</span>
+        <span class="onboard-step"><b>3</b> Detect <kbd>↵</kbd></span>
+        <button id="onboard-close" class="onboard-x" title="Dismiss">✕</button>
+      </div>
+    </div>
+
+    <!-- Live size read-out that follows the box while it is being dragged -->
+    <div id="draw-tip" class="draw-tip" hidden></div>
+
     <div id="layer-toggle" class="layer-toggle" hidden>
-      <label><input type="checkbox" id="show-roofs" checked> Roof overlay</label>
+      <div class="lt-row">
+        <label class="lt-check">
+          <input type="checkbox" id="show-roofs" checked> Roof overlay
+        </label>
+        <span id="lt-count" class="lt-count"></span>
+      </div>
       <label class="opacity-row">
-        Opacity <input type="range" id="roof-opacity" min="0" max="100" value="55">
+        <span>Opacity</span>
+        <input type="range" id="roof-opacity" min="0" max="100" value="55">
       </label>
+      <div class="lt-legend">
+        <span class="lt-swatch"></span>
+        <span>low → high confidence</span>
+      </div>
     </div>
   </main>
 
@@ -189,8 +264,19 @@
 
       <div class="cards" id="summary-cards"></div>
 
+      <section class="result-block" id="resource-block">
+        <div class="block-head">
+          <h3>Solar exposure at this location</h3>
+          <span id="resource-scale" class="pill"></span>
+        </div>
+        <div id="resource-cards" class="mini-cards"></div>
+        <div id="resource-chart"></div>
+        <div class="chart-legend" id="resource-legend"></div>
+        <p class="hint tiny" id="resource-note"></p>
+      </section>
+
       <section class="result-block">
-        <h3>Monthly generation</h3>
+        <h3>Monthly generation from your roof</h3>
         <div id="chart"></div>
         <p class="hint tiny" id="chart-note"></p>
       </section>

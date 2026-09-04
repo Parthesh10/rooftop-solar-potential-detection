@@ -29,12 +29,13 @@ from pathlib import Path
 from webapp.config import (
     CACHE_DIR,
     FALLBACK_SPECIFIC_YIELD_KWH_PER_KWP,
+    PVGIS_MR_URL,
     PVGIS_TIMEOUT_S,
     PVGIS_URL,
     SolarParams,
 )
 
-__all__ = ["estimate", "pvgis_yield", "MONTHS"]
+__all__ = ["estimate", "pvgis_yield", "pvgis_radiation", "MONTHS"]
 
 MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
           "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
@@ -87,11 +88,23 @@ def pvgis_yield(lat: float, lon: float, params: SolarParams) -> dict:
         r.raise_for_status()
         data = r.json()
         totals = data["outputs"]["totals"]["fixed"]
-        monthly = [m["E_m"] for m in data["outputs"]["monthly"]["fixed"]]
+        rows = data["outputs"]["monthly"]["fixed"]
+        monthly = [m["E_m"] for m in rows]
         inputs = data.get("inputs", {}).get("mounting_system", {}).get("fixed", {})
         out = {
             "annual_kwh_per_kwp": float(totals["E_y"]),
             "monthly_kwh_per_kwp": [float(v) for v in monthly],
+            # In-plane irradiation: the sunlight actually landing on a panel at
+            # this tilt, kWh per m² per month. This is the "solar exposure"
+            # figure — energy output is this times panel area and efficiency.
+            "monthly_irradiation_kwh_m2": [float(m.get("H(i)_m", 0.0)) for m in rows],
+            "annual_irradiation_kwh_m2": float(totals.get("H(i)_y", 0.0)),
+            "losses": {
+                "angle_of_incidence_pct": float(totals.get("l_aoi", 0.0)),
+                "spectral_pct": float(totals.get("l_spec", 0.0)),
+                "temperature_low_irradiance_pct": float(totals.get("l_tg", 0.0)),
+                "total_pct": float(totals.get("l_total", 0.0)),
+            },
             "optimal_tilt_deg": float(inputs.get("slope", {}).get("value", tilt or 0)),
             "azimuth_deg": float(inputs.get("azimuth", {}).get("value",
                                                                params.azimuth_deg)),
@@ -104,12 +117,128 @@ def pvgis_yield(lat: float, lon: float, params: SolarParams) -> dict:
         shape = [0.075, 0.080, 0.092, 0.094, 0.096, 0.082,
                  0.072, 0.072, 0.081, 0.086, 0.081, 0.089]
         annual = FALLBACK_SPECIFIC_YIELD_KWH_PER_KWP
+        # A well-run system converts roughly 0.8 kWh of incident energy per kWp
+        # into 1 kWh of AC, so irradiation ≈ yield / 0.8. Crude, and flagged.
+        irr = annual / 0.8
         out = {
             "annual_kwh_per_kwp": annual,
             "monthly_kwh_per_kwp": [round(annual * s, 1) for s in shape],
+            "monthly_irradiation_kwh_m2": [round(irr * s, 1) for s in shape],
+            "annual_irradiation_kwh_m2": round(irr, 1),
+            "losses": {},
             "optimal_tilt_deg": abs(lat) * 0.76 + 3.1,  # classic rule of thumb
             "azimuth_deg": params.azimuth_deg,
             "source": f"fallback constant ({annual:g} kWh/kWp) — PVGIS unreachable",
+            "ok": False,
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+
+    if out["ok"]:
+        with _cache_lock:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(out), encoding="utf-8")
+    return out
+
+
+def pvgis_radiation(lat: float, lon: float) -> dict:
+    """Long-term monthly **solar exposure** at this location.
+
+    Separate from :func:`pvgis_yield`, which answers "how much will a panel
+    make". This answers "how much sun does this place get", which is the
+    location's property rather than the system's — the number you would compare
+    between two cities.
+
+    Uses PVGIS ``MRcalc``: monthly horizontal irradiation (GHI, the standard
+    solar-resource metric), monthly optimal-plane irradiation, and monthly mean
+    air temperature. MRcalc returns one row per month **per year** over its
+    whole database, so the rows are averaged by month into a climatology.
+    """
+    path = CACHE_DIR / "pvgis_rad" / f"{lat:.2f}_{lon:.2f}.json"
+    with _cache_lock:
+        if path.exists():
+            try:
+                return json.loads(path.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+
+    try:
+        import httpx
+
+        r = httpx.get(
+            PVGIS_MR_URL,
+            params={"lat": round(lat, 4), "lon": round(lon, 4),
+                    "horirrad": 1, "optrad": 1, "avtemp": 1,
+                    "outputformat": "json"},
+            timeout=PVGIS_TIMEOUT_S,
+        )
+        r.raise_for_status()
+        data = r.json()
+        rows = data["outputs"]["monthly"]
+
+        # month -> running sums, then divide. PVGIS keys carry the plane in the
+        # name, so read them defensively rather than by exact string.
+        ghi: dict[int, list[float]] = {m: [] for m in range(1, 13)}
+        opt: dict[int, list[float]] = {m: [] for m in range(1, 13)}
+        tmp: dict[int, list[float]] = {m: [] for m in range(1, 13)}
+        years: set[int] = set()
+
+        for row in rows:
+            m = int(row.get("month", 0))
+            if not 1 <= m <= 12:
+                continue
+            if "year" in row:
+                years.add(int(row["year"]))
+            for key, val in row.items():
+                if key.startswith("H(h)"):
+                    ghi[m].append(float(val))
+                elif key.startswith("H(i_opt)"):
+                    opt[m].append(float(val))
+                elif key == "T2m":
+                    tmp[m].append(float(val))
+
+        def mean_by_month(d):
+            return [round(sum(d[m]) / len(d[m]), 1) if d[m] else None
+                    for m in range(1, 13)]
+
+        monthly_ghi = mean_by_month(ghi)
+        monthly_opt = mean_by_month(opt)
+        monthly_t = mean_by_month(tmp)
+
+        if not any(v is not None for v in monthly_ghi):
+            raise ValueError("PVGIS MRcalc returned no horizontal irradiation")
+
+        annual_ghi = round(sum(v for v in monthly_ghi if v is not None), 0)
+        # Peak sun hours: the number of hours of 1000 W/m² that would deliver the
+        # same daily energy. The unit installers actually quote.
+        psh = round(annual_ghi / 365.0, 2)
+
+        best = max((v, i) for i, v in enumerate(monthly_ghi) if v is not None)
+        worst = min((v, i) for i, v in enumerate(monthly_ghi) if v is not None)
+
+        out = {
+            "monthly_ghi_kwh_m2": monthly_ghi,
+            "monthly_optimal_kwh_m2": monthly_opt,
+            "monthly_temp_c": monthly_t,
+            "annual_ghi_kwh_m2": annual_ghi,
+            "peak_sun_hours_per_day": psh,
+            "best_month": {"index": best[1], "name": MONTHS[best[1]], "value": best[0]},
+            "worst_month": {"index": worst[1], "name": MONTHS[worst[1]], "value": worst[0]},
+            "seasonality_ratio": round(best[0] / worst[0], 2) if worst[0] else None,
+            "years_averaged": (max(years) - min(years) + 1) if years else None,
+            "year_range": [min(years), max(years)] if years else None,
+            "source": "PVGIS v5.2 MRcalc (EU JRC) — SARAH3 / ERA5 climatology",
+            "ok": True,
+        }
+    except Exception as exc:
+        out = {
+            "monthly_ghi_kwh_m2": [None] * 12,
+            "monthly_optimal_kwh_m2": [None] * 12,
+            "monthly_temp_c": [None] * 12,
+            "annual_ghi_kwh_m2": None,
+            "peak_sun_hours_per_day": None,
+            "best_month": None, "worst_month": None, "seasonality_ratio": None,
+            "years_averaged": None, "year_range": None,
+            "source": "unavailable — PVGIS MRcalc unreachable",
             "ok": False,
             "error": f"{type(exc).__name__}: {exc}",
         }
@@ -151,6 +280,12 @@ def estimate(roof_area_m2: float, lat: float, lon: float,
         "annual_kwh": round(annual_kwh, 0),
         "monthly_kwh": [round(v, 0) for v in monthly_kwh],
         "specific_yield_kwh_per_kwp": round(yields["annual_kwh_per_kwp"], 0),
+        # Sunlight landing on the panels themselves, at the chosen tilt.
+        "monthly_irradiation_kwh_m2": [round(v, 1) for v in
+                                       yields.get("monthly_irradiation_kwh_m2", [])],
+        "annual_irradiation_kwh_m2": round(
+            yields.get("annual_irradiation_kwh_m2", 0.0), 0),
+        "system_losses_breakdown": yields.get("losses", {}),
         "optimal_tilt_deg": round(yields["optimal_tilt_deg"], 1),
         "azimuth_deg": round(yields["azimuth_deg"], 1),
         "irradiance_source": yields["source"],

@@ -38,9 +38,21 @@ async function boot() {
 
   initMap();
   wireControls();
+  initOnboarding();
 
   const p = state.cfg.tile_provider;
   $('attribution').innerHTML = p.attribution;
+
+  // Default the threshold to whatever the model's own manifest says is optimal,
+  // rather than a number baked into this file.
+  try {
+    state.model = await (await fetch('/api/model')).json();
+    if (state.model.threshold) {
+      $('threshold').value = state.model.threshold;
+      $('threshold-out').textContent = (+state.model.threshold).toFixed(2);
+    }
+    if (state.model.tta) $('tta').checked = true;
+  } catch { /* the model card is a nicety here, not a requirement */ }
 }
 
 function fatal(msg) {
@@ -183,11 +195,14 @@ function setupDrawing() {
 
   const onMove = (e) => {
     if (!start) return;
-    setAOI(boundsFrom(start, toLngLat(e)), false);
+    const b = boundsFrom(start, toLngLat(e));
+    setAOI(b, false);
+    showDrawTip(b, e.clientX, e.clientY);
   };
 
   const onUp = (e) => {
     document.removeEventListener('mousemove', onMove);
+    hideDrawTip();
     if (!start) return;
     const b = boundsFrom(start, toLngLat(e));
     start = null;
@@ -235,7 +250,8 @@ function startDrawing() {
   state.map.doubleClickZoom.disable();
   $('map').classList.add('drawing');
   $('draw-btn').classList.add('active');
-  badge('Drag a box over the rooftops you want to analyse');
+  $('draw-label').textContent = 'Cancel';
+  badge('Drag a box over the rooftops you want to analyse — Esc to cancel');
 }
 
 function stopDrawing() {
@@ -244,8 +260,30 @@ function stopDrawing() {
   state.map.doubleClickZoom.enable();
   $('map').classList.remove('drawing');
   $('draw-btn').classList.remove('active');
+  $('draw-label').textContent = state.aoi ? 'Redraw area' : 'Draw area';
   badge(null);
+  hideDrawTip();
 }
+
+/** Live w × h read-out pinned to the cursor while the box is being dragged. */
+function showDrawTip(b, clientX, clientY) {
+  const el = $('draw-tip');
+  const midLat = (b.north + b.south) / 2;
+  const w = haversine(b.west, midLat, b.east, midLat);
+  const h = haversine(b.west, b.south, b.west, b.north);
+  const tiles = estimateTiles(b);
+  const over = tiles > state.cfg.max_tiles;
+
+  el.innerHTML =
+    `<b>${Math.round(w)} × ${Math.round(h)} m</b>
+     <span class="${over ? 'dt-over' : ''}">${tiles} tile${tiles === 1 ? '' : 's'}${over ? ' — too big' : ''}</span>`;
+  el.classList.toggle('over', over);
+  el.style.left = (clientX + 16) + 'px';
+  el.style.top = (clientY + 16) + 'px';
+  el.hidden = false;
+}
+
+function hideDrawTip() { $('draw-tip').hidden = true; }
 
 function setAOI(b, final) {
   state.aoi = b;
@@ -323,6 +361,8 @@ function wireControls() {
     state.map.getSource('roofs').setData(emptyFC());
     $('results').hidden = true;
     $('layer-toggle').hidden = true;
+    $('draw-label').textContent = 'Draw area';
+    state.result = null;
     hideError();
   };
 
@@ -337,13 +377,21 @@ function wireControls() {
   bind('losses', (v) => v + '%');
   bind('threshold', (v) => v.toFixed(2));
 
+  $('threshold').addEventListener('input', () => {
+    state.thresholdTouched = true;
+    $('threshold-auto').hidden = true;
+  });
+
   $('reset-assumptions').onclick = async () => {
     const a = await (await fetch('/api/assumptions')).json();
     const d = a.defaults;
     $('packing').value = d.packing_factor;
     $('efficiency').value = d.module_efficiency;
     $('losses').value = d.system_losses_pct;
-    $('threshold').value = 0.5;
+    $('threshold').value = state.model?.threshold ?? 0.5;
+    state.thresholdTouched = false;
+    $('threshold-auto').hidden = false;
+    $('tta').checked = false;
     $('tariff').value = d.tariff_per_kwh;
     $('cost').value = d.cost_per_kwp;
     $('subsidy').value = d.subsidy;
@@ -366,17 +414,7 @@ function wireControls() {
     state.map.setPaintProperty('roofs-fill', 'fill-opacity', +e.target.value / 100);
   };
 
-  // Search
-  $('search-btn').onclick = doSearch;
-  $('search-input').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') doSearch();
-    if (e.key === 'Escape') $('search-results').hidden = true;
-  });
-  document.addEventListener('click', (e) => {
-    if (!e.target.closest('.search-row') && !e.target.closest('#search-results')) {
-      $('search-results').hidden = true;
-    }
-  });
+  wireSearch();
 
   $('about-btn').onclick = showAbout;
   $('about-close').onclick = () => { $('about-modal').hidden = true; };
@@ -384,44 +422,299 @@ function wireControls() {
     if (e.target.id === 'about-modal') $('about-modal').hidden = true;
   });
   document.addEventListener('keydown', (e) => {
-    if (e.key !== 'Escape') return;
-    $('about-modal').hidden = true;
-    if (state.drawing) stopDrawing();
+    // Keyboard shortcuts, but never while the user is typing in a field.
+    const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
+
+    if (e.key === 'Escape') {
+      $('about-modal').hidden = true;
+      if (state.drawing) stopDrawing();
+      return;
+    }
+    if (typing || e.ctrlKey || e.metaKey || e.altKey) return;
+
+    if (e.key === 'd' || e.key === 'D') {
+      e.preventDefault();
+      state.drawing ? stopDrawing() : startDrawing();
+    } else if (e.key === 'Enter' && !$('run-btn').disabled) {
+      e.preventDefault();
+      runAnalysis();
+    } else if (e.key === '/') {
+      e.preventDefault();
+      $('search-input').focus();
+      $('search-input').select();
+    }
   });
 
   $('export-geojson').onclick = exportGeoJSON;
   $('export-csv').onclick = exportCSV;
 }
 
-/* ───────────────────────── search ───────────────────────── */
+/* ───────────────────────── search ─────────────────────────
+   Type-ahead over Photon (Komoot's geocoder, built for autocomplete) with
+   Nominatim as the fallback. Also accepts raw coordinates, which is the fastest
+   path when someone already knows exactly where they want to look. */
 
-async function doSearch() {
-  const q = $('search-input').value.trim();
-  if (!q) return;
-  const box = $('search-results');
-  box.hidden = false;
-  box.innerHTML = '<div>searching…</div>';
+const search = {
+  items: [], active: -1, seq: 0, timer: null, cache: new Map(),
+};
+
+const RECENT_KEY = 'rsolar.recent';
+
+function loadRecent() {
+  try { return JSON.parse(localStorage.getItem(RECENT_KEY)) || []; }
+  catch { return []; }
+}
+
+function saveRecent(item) {
   try {
-    const url = 'https://nominatim.openstreetmap.org/search?format=json&limit=6&q='
-              + encodeURIComponent(q);
-    const res = await (await fetch(url, { headers: { Accept: 'application/json' } })).json();
-    if (!res.length) { box.innerHTML = '<div>no matches</div>'; return; }
-    box.innerHTML = '';
-    res.forEach((r) => {
-      const d = document.createElement('div');
-      d.textContent = r.display_name;
-      d.onclick = () => {
-        box.hidden = true;
-        $('search-input').value = r.display_name.split(',')[0];
-        state.map.flyTo({ center: [+r.lon, +r.lat], zoom: state.cfg.serving_zoom - 1, duration: 1400 });
-        setTimeout(() => badge('Now click "Draw area" and drag a box'), 1500);
-        setTimeout(() => badge(null), 5000);
-      };
-      box.appendChild(d);
-    });
+    const list = loadRecent().filter((r) => r.label !== item.label);
+    list.unshift(item);
+    localStorage.setItem(RECENT_KEY, JSON.stringify(list.slice(0, 5)));
+  } catch { /* private mode: recents are a convenience, not a requirement */ }
+}
+
+/** "23.21, 77.40" / "23.21 77.40" / "23.21N 77.40E" -> a result, or null. */
+function parseCoords(q) {
+  const m = q.trim().match(
+    /^(-?\d+(?:\.\d+)?)\s*°?\s*([NnSs])?\s*[,\s]\s*(-?\d+(?:\.\d+)?)\s*°?\s*([EeWw])?$/);
+  if (!m) return null;
+  let lat = parseFloat(m[1]);
+  let lon = parseFloat(m[3]);
+  if (m[2] && m[2].toLowerCase() === 's') lat = -lat;
+  if (m[4] && m[4].toLowerCase() === 'w') lon = -lon;
+  if (Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
+  return {
+    label: `${lat.toFixed(5)}, ${lon.toFixed(5)}`,
+    detail: 'coordinates', lat, lon, kind: 'coords',
+  };
+}
+
+function normalisePhoton(json) {
+  return (json.features || []).map((f) => {
+    const p = f.properties || {};
+    const [lon, lat] = f.geometry.coordinates;
+    const label = p.name
+      || [p.street, p.housenumber].filter(Boolean).join(' ')
+      || p.city || p.county || 'Unnamed';
+    const detail = [p.street && p.name !== p.street ? p.street : null,
+                    p.district, p.city, p.county, p.state, p.country]
+      .filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).join(', ');
+    return { label, detail, lat, lon, kind: p.osm_value || p.type || 'place' };
+  });
+}
+
+function normaliseNominatim(json) {
+  return (json || []).map((r) => {
+    const parts = r.display_name.split(',').map((s) => s.trim());
+    return {
+      label: parts[0], detail: parts.slice(1).join(', '),
+      lat: +r.lat, lon: +r.lon, kind: r.type || 'place',
+    };
+  });
+}
+
+async function fetchSuggestions(q) {
+  if (search.cache.has(q)) return search.cache.get(q);
+
+  let out = [];
+  try {
+    const url = `https://photon.komoot.io/api/?limit=6&q=${encodeURIComponent(q)}`;
+    const r = await fetch(url);
+    if (!r.ok) throw new Error('photon ' + r.status);
+    out = normalisePhoton(await r.json());
   } catch {
-    box.innerHTML = '<div>search unavailable — pan the map manually</div>';
+    try {
+      const url = 'https://nominatim.openstreetmap.org/search?format=json&limit=6&q='
+                + encodeURIComponent(q);
+      const r = await fetch(url, { headers: { Accept: 'application/json' } });
+      out = normaliseNominatim(await r.json());
+    } catch {
+      return null;   // both geocoders unreachable
+    }
   }
+  search.cache.set(q, out);
+  return out;
+}
+
+const KIND_ICON = {
+  coords: '⌖', city: '🏙', town: '🏙', village: '🏘', suburb: '🏘',
+  house: '🏠', residential: '🏠', building: '🏢', university: '🎓',
+  school: '🎓', hospital: '🏥', industrial: '🏭', recent: '🕘',
+};
+const kindIcon = (k) => KIND_ICON[k] || '📍';
+
+function renderSuggestions(items, { emptyMessage = null, heading = null } = {}) {
+  const box = $('search-results');
+  search.items = items;
+  search.active = -1;
+
+  if (!items.length) {
+    box.innerHTML = `<div class="sr-empty">${esc(emptyMessage || 'No matches')}</div>`;
+    box.hidden = false;
+    $('search-input').setAttribute('aria-expanded', 'true');
+    return;
+  }
+
+  box.innerHTML =
+    (heading ? `<div class="sr-heading">${esc(heading)}</div>` : '')
+    + items.map((it, i) => `
+      <div class="sr-item" role="option" data-i="${i}" id="sr-opt-${i}">
+        <span class="sr-ico">${kindIcon(it.kind)}</span>
+        <span class="sr-text">
+          <span class="sr-label">${esc(it.label)}</span>
+          ${it.detail ? `<span class="sr-detail">${esc(it.detail)}</span>` : ''}
+        </span>
+      </div>`).join('');
+
+  box.querySelectorAll('.sr-item').forEach((el) => {
+    const i = +el.dataset.i;
+    el.onmouseenter = () => setActiveSuggestion(i, false);
+    el.onmousedown = (e) => { e.preventDefault(); chooseSuggestion(i); };
+  });
+
+  box.hidden = false;
+  $('search-input').setAttribute('aria-expanded', 'true');
+}
+
+function setActiveSuggestion(i, scroll = true) {
+  const box = $('search-results');
+  const els = [...box.querySelectorAll('.sr-item')];
+  if (!els.length) return;
+  search.active = (i + els.length) % els.length;
+  els.forEach((el, n) => el.classList.toggle('active', n === search.active));
+  $('search-input').setAttribute('aria-activedescendant', `sr-opt-${search.active}`);
+  if (scroll) els[search.active].scrollIntoView({ block: 'nearest' });
+}
+
+function closeSuggestions() {
+  $('search-results').hidden = true;
+  $('search-input').setAttribute('aria-expanded', 'false');
+  search.active = -1;
+}
+
+function chooseSuggestion(i) {
+  const it = search.items[i];
+  if (!it) return;
+  closeSuggestions();
+  $('search-input').value = it.label;
+  $('search-clear').hidden = false;
+  saveRecent(it);
+  goTo(it);
+}
+
+function goTo(it) {
+  // z-1 frames a block or two: enough context to pick out one building without
+  // making the user zoom out again.
+  state.map.flyTo({ center: [it.lon, it.lat],
+                    zoom: state.cfg.serving_zoom - 1, duration: 1300 });
+  state.map.once('moveend', () => {
+    if (!state.aoi) badge('Now click "Draw area" and drag a box over the roofs');
+    setTimeout(() => badge(null), 5200);
+  });
+}
+
+function showRecentOrHint() {
+  const recent = loadRecent();
+  if (recent.length) {
+    renderSuggestions(recent.map((r) => ({ ...r, kind: 'recent' })),
+                      { heading: 'Recent' });
+  } else {
+    closeSuggestions();
+  }
+}
+
+async function runSearch(q) {
+  const seq = ++search.seq;
+
+  const coords = parseCoords(q);
+  if (coords) { renderSuggestions([coords], { heading: 'Go to coordinates' }); return; }
+
+  if (q.length < 2) { showRecentOrHint(); return; }
+
+  $('search-spin').hidden = false;
+  const items = await fetchSuggestions(q);
+  if (seq !== search.seq) return;         // a newer keystroke already won
+  $('search-spin').hidden = true;
+
+  if (items === null) {
+    renderSuggestions([], {
+      emptyMessage: 'Search is unavailable — pan the map, or paste "lat, lon".' });
+  } else {
+    renderSuggestions(items, {
+      emptyMessage: `No match for "${q}". Try adding a city or country.` });
+  }
+}
+
+function wireSearch() {
+  const input = $('search-input');
+
+  input.addEventListener('input', () => {
+    const q = input.value.trim();
+    $('search-clear').hidden = !q;
+    clearTimeout(search.timer);
+    if (!q) { $('search-spin').hidden = true; showRecentOrHint(); return; }
+    // 220 ms: long enough not to fire on every keystroke, short enough that the
+    // list feels like it is keeping up.
+    search.timer = setTimeout(() => runSearch(q), 220);
+  });
+
+  input.addEventListener('focus', () => {
+    if (!input.value.trim()) showRecentOrHint();
+    else if (search.items.length) $('search-results').hidden = false;
+  });
+
+  input.addEventListener('keydown', (e) => {
+    const open = !$('search-results').hidden;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (!open) { runSearch(input.value.trim()); return; }
+      setActiveSuggestion(search.active + 1);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setActiveSuggestion(search.active - 1);
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      clearTimeout(search.timer);
+      if (open && search.active >= 0) chooseSuggestion(search.active);
+      else if (open && search.items.length) chooseSuggestion(0);
+      else runSearch(input.value.trim()).then(() => {
+        if (search.items.length) chooseSuggestion(0);
+      });
+    } else if (e.key === 'Escape') {
+      closeSuggestions();
+      input.blur();
+    }
+  });
+
+  $('search-clear').onclick = () => {
+    input.value = '';
+    $('search-clear').hidden = true;
+    input.focus();
+    showRecentOrHint();
+  };
+
+  document.addEventListener('mousedown', (e) => {
+    if (!e.target.closest('.search-box')) closeSuggestions();
+  });
+
+  $('here-btn').onclick = () => {
+    if (!navigator.geolocation) {
+      showError('This browser will not share a location.');
+      return;
+    }
+    badge('Finding your location…');
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        badge(null);
+        goTo({ lat: pos.coords.latitude, lon: pos.coords.longitude });
+      },
+      () => {
+        badge(null);
+        showError('Could not get your location. Browsers only allow this over '
+                + 'HTTPS or on localhost, and it needs permission.');
+      },
+      { enableHighAccuracy: true, timeout: 10000 });
+  };
 }
 
 /* ───────────────────────── analysis ───────────────────────── */
@@ -431,7 +724,10 @@ function payload() {
   return {
     bounds: state.aoi,
     zoom: state.cfg.serving_zoom,
-    threshold: +$('threshold').value,
+    // null = let the server choose based on how well the model knows this
+    // region. Only override once the user has actually moved the slider.
+    threshold: state.thresholdTouched ? +$('threshold').value : null,
+    tta: $('tta').checked,
     packing_factor: +$('packing').value,
     module_efficiency: +$('efficiency').value,
     system_losses_pct: +$('losses').value,
@@ -447,9 +743,11 @@ function payload() {
 async function runAnalysis() {
   if (!state.aoi) return;
   hideError();
+  dismissOnboarding();
   $('run-btn').disabled = true;
+  $('run-label').textContent = 'Working…';
   $('progress-wrap').hidden = false;
-  setProgress(0.02, 'starting…');
+  setProgress(0.02, 'starting…', 'fetching');
 
   try {
     const r = await fetch('/api/analyze', {
@@ -471,7 +769,7 @@ function pollJob() {
   state.poll = setInterval(async () => {
     try {
       const j = await (await fetch(`/api/jobs/${state.jobId}`)).json();
-      setProgress(j.progress, j.message);
+      setProgress(j.progress, j.message, j.state);
       if (j.state === 'done') {
         clearInterval(state.poll);
         finishRun();
@@ -491,12 +789,35 @@ function pollJob() {
 
 function finishRun() {
   $('run-btn').disabled = false;
+  $('run-label').textContent = 'Detect rooftops';
   setTimeout(() => { $('progress-wrap').hidden = true; }, 900);
 }
 
-function setProgress(p, msg) {
+const ONBOARD_KEY = 'rsolar.onboarded';
+
+function dismissOnboarding() {
+  $('onboard').classList.add('gone');
+  try { localStorage.setItem(ONBOARD_KEY, '1'); } catch { /* private mode */ }
+}
+
+function initOnboarding() {
+  let seen = false;
+  try { seen = localStorage.getItem(ONBOARD_KEY) === '1'; } catch { /* ignore */ }
+  if (seen) $('onboard').classList.add('gone');
+  $('onboard-close').onclick = dismissOnboarding;
+}
+
+function setProgress(p, msg, stage) {
   $('progress-bar').style.width = Math.max(2, p * 100) + '%';
   $('progress-msg').textContent = msg || '';
+  if (!stage) return;
+  const order = ['fetching', 'detecting', 'measuring'];
+  const at = order.indexOf(stage);
+  document.querySelectorAll('.progress-steps span').forEach((el) => {
+    const i = order.indexOf(el.dataset.stage);
+    el.classList.toggle('done', at > i);
+    el.classList.toggle('active', at === i);
+  });
 }
 
 function showError(msg) {
@@ -515,8 +836,10 @@ function renderResult(res) {
 
   state.map.getSource('roofs').setData(res.geojson);
   $('layer-toggle').hidden = false;
+  $('lt-count').textContent =
+    `${res.geojson.features.length} roof${res.geojson.features.length === 1 ? '' : 's'}`;
   $('results').hidden = false;
-  $('results').scrollTop = 0;
+  document.querySelector('.results-scroll').scrollTop = 0;
 
   // Geographic coverage: say plainly whether the model has seen anything like
   // this region, before the user reads a confident-looking number.
@@ -558,6 +881,8 @@ function renderResult(res) {
       <div class="card-value">${val}<span class="card-unit">${unit}</span></div>
       <div class="card-sub">${esc(sub)}</div>
     </div>`).join('');
+
+  renderSolarResource(res.solar_resource, s);
 
   drawChart(s.monthly_kwh);
   $('chart-note').textContent =
@@ -621,6 +946,9 @@ function renderResult(res) {
     ['Tiles analysed', `${im.tiles}${im.tiles_failed ? ` (${im.tiles_failed} failed)` : ''}`],
     ['Model', `${res.model.architecture} / ${res.model.encoder}`],
     ['Model val IoU', (res.model.metrics?.val?.iou ?? '—')],
+    ['Detection threshold', `${res.detection.threshold}`
+      + (res.detection.threshold_auto ? ' (auto for this region)' : ' (you set this)')],
+    ['High accuracy (TTA)', res.detection.tta ? 'on' : 'off'],
     ['Mean confidence', s.mean_confidence],
     ['Roof coverage of AOI', s.roof_coverage_pct + '%'],
   ].map(([k, v]) => `<div class="kv-row"><span>${k}</span><span>${esc(String(v))}</span></div>`).join('');
@@ -642,6 +970,148 @@ function ringBounds(ring) {
     s = Math.min(s, lat); n = Math.max(n, lat);
   });
   return [[w, s], [e, n]];
+}
+
+/* ───────────────── solar resource (exposure) ─────────────────
+   How much sun this *place* gets, independent of the roof or the system. It is
+   what makes two locations comparable, and it is the physical input everything
+   downstream multiplies. */
+
+/** Rough global bands for annual GHI, so a number has a meaning attached. */
+function ghiBand(ghi) {
+  if (ghi == null) return null;
+  if (ghi >= 2000) return { label: 'Exceptional', cls: 'b-exceptional' };
+  if (ghi >= 1700) return { label: 'Very good',   cls: 'b-verygood' };
+  if (ghi >= 1400) return { label: 'Good',        cls: 'b-good' };
+  if (ghi >= 1100) return { label: 'Moderate',    cls: 'b-moderate' };
+  return { label: 'Low', cls: 'b-low' };
+}
+
+function renderSolarResource(r, summary) {
+  const block = $('resource-block');
+  if (!r || !r.ok) {
+    block.hidden = false;
+    $('resource-scale').textContent = '';
+    $('resource-cards').innerHTML = '';
+    $('resource-chart').innerHTML = '';
+    $('resource-legend').innerHTML = '';
+    $('resource-note').textContent =
+      'Solar exposure data is unavailable — PVGIS could not be reached. The '
+      + 'generation estimate below is using fallback numbers.';
+    return;
+  }
+  block.hidden = false;
+
+  const band = ghiBand(r.annual_ghi_kwh_m2);
+  $('resource-scale').textContent = band ? band.label : '';
+  $('resource-scale').className = 'pill ' + (band ? band.cls : '');
+
+  const cards = [
+    ['Annual sunlight', fmtInt(r.annual_ghi_kwh_m2), 'kWh/m²',
+     'on a flat surface'],
+    ['Peak sun hours', r.peak_sun_hours_per_day, 'h/day',
+     'full-strength-equivalent'],
+    ['Sunniest', r.best_month.name, `${Math.round(r.best_month.value)} kWh/m²`,
+     `${r.seasonality_ratio}× the lowest month`],
+    ['Lowest', r.worst_month.name, `${Math.round(r.worst_month.value)} kWh/m²`,
+     'plan storage around this'],
+  ];
+  $('resource-cards').innerHTML = cards.map(([l, v, u, s]) => `
+    <div class="mini-card">
+      <div class="mc-label">${l}</div>
+      <div class="mc-value">${v}<span class="mc-unit">${esc(u)}</span></div>
+      <div class="mc-sub">${esc(s)}</div>
+    </div>`).join('');
+
+  drawResourceChart(r, summary);
+
+  $('resource-legend').innerHTML = `
+    <span class="lg"><i class="lg-bar"></i>Sunlight on a flat surface (kWh/m²)</span>
+    <span class="lg"><i class="lg-line"></i>On your panels at ${summary.optimal_tilt_deg}° tilt</span>
+    <span class="lg"><i class="lg-dot"></i>Avg air temperature</span>`;
+
+  const yrs = r.year_range
+    ? `averaged over ${r.year_range[0]}–${r.year_range[1]}` : 'long-term average';
+  $('resource-note').textContent =
+    `${r.source}, ${yrs}, at ${r.lat}, ${r.lon}. `
+    + `Tilting panels to ${summary.optimal_tilt_deg}° raises the annual figure to `
+    + `${fmtInt(summary.annual_irradiation_kwh_m2)} kWh/m². Your system converts that `
+    + `to ${fmtInt(summary.specific_yield_kwh_per_kwp)} kWh per kWp installed.`;
+}
+
+/** Grouped bars (GHI) + line (in-plane) + temperature dots, one SVG. */
+function drawResourceChart(r, summary) {
+  const M = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'];
+  const W = 380, H = 168, padL = 34, padR = 30, padT = 12, padB = 22;
+  const iw = W - padL - padR, ih = H - padT - padB;
+  const bw = iw / 12;
+
+  const ghi = r.monthly_ghi_kwh_m2.map((v) => v ?? 0);
+  const plane = summary.monthly_irradiation_kwh_m2 || [];
+  const temps = r.monthly_temp_c || [];
+
+  const maxIrr = Math.max(...ghi, ...plane.filter((v) => v != null), 1);
+  const step = niceStep(maxIrr);
+  const top = Math.ceil(maxIrr / step) * step;
+
+  let grid = '';
+  for (let v = 0; v <= top + 1e-9; v += step) {
+    const y = padT + ih - (v / top) * ih;
+    grid += `<line x1="${padL}" y1="${y.toFixed(1)}" x2="${W - padR}" y2="${y.toFixed(1)}"
+                   stroke="#2a323d" stroke-width="1"/>
+             <text x="${padL - 5}" y="${(y + 3.5).toFixed(1)}" text-anchor="end"
+                   font-size="8.5" fill="#6e7c8c">${v}</text>`;
+  }
+
+  const bars = ghi.map((v, i) => {
+    const h = (v / top) * ih;
+    const x = padL + i * bw + bw * 0.2;
+    return `<rect x="${x.toFixed(1)}" y="${(padT + ih - h).toFixed(1)}"
+                  width="${(bw * 0.6).toFixed(1)}" height="${Math.max(h, 1).toFixed(1)}"
+                  rx="2" fill="url(#gsun)">
+              <title>${M[i]}: ${Math.round(v)} kWh/m² on the flat</title>
+            </rect>
+            <text x="${(padL + i * bw + bw / 2).toFixed(1)}" y="${H - 7}"
+                  text-anchor="middle" font-size="8.5" fill="#6e7c8c">${M[i]}</text>`;
+  }).join('');
+
+  let planeLine = '';
+  if (plane.length === 12) {
+    const pts = plane.map((v, i) =>
+      `${(padL + i * bw + bw / 2).toFixed(1)},${(padT + ih - (v / top) * ih).toFixed(1)}`);
+    planeLine = `<polyline points="${pts.join(' ')}" fill="none" stroke="#5ac8fa"
+                            stroke-width="1.8" stroke-linejoin="round"/>`
+      + plane.map((v, i) => `<circle cx="${(padL + i * bw + bw / 2).toFixed(1)}"
+            cy="${(padT + ih - (v / top) * ih).toFixed(1)}" r="2" fill="#5ac8fa">
+            <title>${M[i]}: ${Math.round(v)} kWh/m² on tilted panels</title></circle>`).join('');
+  }
+
+  let tempMarks = '';
+  const tv = temps.filter((v) => v != null);
+  if (tv.length === 12) {
+    const tMin = Math.min(...tv), tMax = Math.max(...tv);
+    const span = Math.max(tMax - tMin, 1);
+    tempMarks = temps.map((v, i) => {
+      const y = padT + ih - ((v - tMin) / span) * (ih * 0.55) - ih * 0.05;
+      return `<circle cx="${(padL + i * bw + bw / 2).toFixed(1)}" cy="${y.toFixed(1)}"
+                      r="1.7" fill="none" stroke="#f85149" stroke-width="1.2">
+                <title>${M[i]}: ${v}°C average</title></circle>`;
+    }).join('');
+    tempMarks += `<text x="${W - padR + 4}" y="${(padT + 8).toFixed(1)}"
+                        font-size="8" fill="#f85149">${Math.round(tMax)}°</text>
+                  <text x="${W - padR + 4}" y="${(padT + ih * 0.62).toFixed(1)}"
+                        font-size="8" fill="#f85149">${Math.round(tMin)}°</text>`;
+  }
+
+  $('resource-chart').innerHTML = `
+    <svg viewBox="0 0 ${W} ${H}" role="img"
+         aria-label="Monthly solar exposure in kilowatt hours per square metre">
+      <defs><linearGradient id="gsun" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#ffcb5e"/><stop offset="100%" stop-color="#c2410c"/>
+      </linearGradient></defs>
+      ${grid}${bars}${planeLine}${tempMarks}
+      <text x="2" y="9" font-size="8" fill="#6e7c8c">kWh/m²</text>
+    </svg>`;
 }
 
 /* ───────────────────────── chart ───────────────────────── */
