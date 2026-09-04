@@ -121,6 +121,15 @@ class TileGrid:
         return pixel_to_lonlat(self.origin_px[0] + px,
                                self.origin_px[1] + py, self.zoom)
 
+    def lonlat_to_pixel(self, lon: float, lat: float) -> tuple[float, float]:
+        """Lon/lat -> mosaic-local pixel. Inverse of :meth:`pixel_to_lonlat`.
+
+        Needed to rasterise external reference footprints (OpenStreetMap) onto
+        the same grid the model ran on — see :mod:`webapp.calibration`.
+        """
+        gx, gy = lonlat_to_pixel(lon, lat, self.zoom)
+        return gx - self.origin_px[0], gy - self.origin_px[1]
+
 
 def tile_grid_for_bounds(west: float, south: float, east: float, north: float,
                          zoom: int) -> TileGrid:

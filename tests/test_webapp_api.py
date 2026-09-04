@@ -160,6 +160,13 @@ def test_analyze_end_to_end_without_network(client, monkeypatch):
     assert res["geojson"]["type"] == "FeatureCollection"
     assert res["summary"]["packing_factor"] == 0.8
     assert res["coverage"]["level"] == "untested"      # Bhopal
+    assert res["region"]["key"] == "in"
+    # The detection settings must be chosen for this place and be auditable.
+    cal = res["calibration"]
+    assert cal["source"] in ("prior", "histogram", "reference")
+    assert cal["band"][0] <= res["detection"]["threshold"] <= cal["band"][1]
+    assert cal["steps"], "a calibration with no audit trail is not auditable"
+    assert res["detection"]["morph_kernel_px"] >= 1
     assert res["imagery"]["zoom"] == 19
     assert res["model"]["architecture"]
     # usable area must be the packing factor times roof area, always
@@ -170,6 +177,36 @@ def test_analyze_end_to_end_without_network(client, monkeypatch):
 # --------------------------------------------------------------------------- #
 # Inference
 # --------------------------------------------------------------------------- #
+def test_region_profile_reports_local_defaults_and_a_threshold(client):
+    r = client.get("/api/region-profile", params={"lat": 12.97, "lon": 77.59})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["region"]["key"] == "in"
+    assert body["region"]["economics"]["currency"] == "INR"
+    assert body["coverage"]["level"] == "untested"
+    lo, hi = body["region"]["threshold_band"]
+    assert lo <= body["calibration"]["threshold"] <= hi
+    # Every pre-filled number must carry a stated source, same rule as
+    # /api/assumptions.
+    for key in body["region"]["economics"]:
+        if key in ("currency", "currency_symbol"):
+            continue
+        assert key in body["region"]["sources"], f"{key} has no stated source"
+
+
+def test_region_profile_puts_an_unlisted_location_in_no_ones_currency(client):
+    body = client.get("/api/region-profile",
+                      params={"lat": -23.55, "lon": -46.63}).json()   # Sao Paulo
+    assert body["region"]["key"] == "global"
+    assert body["region"]["economics_confidence"] == "none"
+    assert body["region"]["economics"]["currency"] != "INR"
+
+
+def test_region_profile_rejects_impossible_coordinates(client):
+    assert client.get("/api/region-profile",
+                      params={"lat": 991, "lon": 0}).status_code == 422
+
+
 @needs_model
 def test_sliding_window_returns_the_input_geometry():
     from webapp.inference import load_model, predict_mask

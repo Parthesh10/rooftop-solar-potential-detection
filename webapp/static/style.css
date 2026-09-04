@@ -628,3 +628,43 @@ tbody tr.hl { background: rgba(245,166,35,.14); }
   text-transform: uppercase; letter-spacing: .05em; font-weight: 700;
   background: rgba(245,166,35,.16); color: var(--accent);
 }
+
+
+/* ──────────────── Region profile + detection calibration ──────────────── */
+.region-chip {
+  display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+  margin: 0 0 12px; padding: 8px 10px; border-radius: 7px;
+  background: var(--bg-3); border: 1px solid var(--line);
+  font-size: 11.5px; color: var(--text-dim);
+}
+.region-chip b { color: var(--text); }
+.region-chip .rc-note { color: var(--text-faint); }
+.region-chip .rc-undo {
+  margin-left: auto; background: none; border: none; padding: 0;
+  color: var(--accent-2); cursor: pointer; font: inherit; text-decoration: underline;
+}
+
+.calib-row { display: flex; align-items: center; gap: 10px; margin: 10px 0 6px; }
+.calib-row .hint { margin: 0; }
+
+.calib-report {
+  margin-top: 8px; padding: 9px 10px; border-radius: 7px;
+  background: var(--bg-3); border: 1px solid var(--line); font-size: 11.5px;
+}
+.calib-report.bad { border-color: var(--bad); }
+
+.pill.calib-reference { background: rgba(63,185,80,.18);  color: #7ee08c; }
+.pill.calib-histogram { background: rgba(245,166,35,.20); color: var(--accent-2); }
+.pill.calib-prior     { background: var(--bg-3);          color: var(--text-faint); }
+.pill.calib-user      { background: var(--bg-3);          color: var(--text-dim); }
+
+.calib-steps {
+  margin: 10px 0 0; padding-left: 18px;
+  font-size: 11.5px; color: var(--text-dim); line-height: 1.55;
+}
+.calib-steps li { margin-bottom: 4px; }
+.calib-warn {
+  margin: 10px 0 0; padding: 8px 10px; border-radius: 6px;
+  background: rgba(248,81,73,.10); border: 1px solid rgba(248,81,73,.35);
+  font-size: 11.5px; color: var(--text);
+}

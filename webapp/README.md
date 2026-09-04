@@ -41,7 +41,8 @@ AOI bounds
   → fetch + stitch to one mosaic          tiles.py     (8 parallel requests)
   → sliding-window inference, 512/256     inference.py (ONNX Runtime)
   → Hann-blended probability map
-  → threshold → morphological open/close  geometry.py
+  → threshold chosen for THIS area        calibration.py + regions.py
+  → morphological open/close, kernel too  calibration.py -> geometry.py
   → cv2.findContours + Douglas-Peucker    geometry.py
   → rings to lon/lat, geodesic area       geometry.py  (pyproj.Geod)
   → area → kWp → PVGIS → kWh → ₹ → CO₂    solar.py
@@ -66,24 +67,128 @@ prediction was wrong.
 
 ## Detection sensitivity — read this before changing it
 
-The decision threshold is **not** a fixed number. It is chosen per region by
-`coverage.THRESHOLD_BY_LEVEL`:
+The decision threshold is **not** a fixed number, and it is no longer a guess
+either. Three sources of evidence, cheapest first, in `calibration.py`:
 
-| region | threshold |
+| step | cost | what it uses |
+|---|---|---|
+| 1. regional prior | free, offline | distance to a training city (`coverage.py`), clamped into the region's band (`regions.py`) |
+| 2. histogram self-calibration | free | Otsu's valley in the model's own probability map |
+| 3. reference calibration | ~1 min, once per ~5 km cell | real OpenStreetMap building outlines |
+
+**Why a prior at all.** On Inria, 0.50 and 0.65 differ by 0.002 IoU — noise. Out
+of distribution the model is under-confident, and raising the threshold to 0.60
+cost **7–11% of detected roof area** across Bangalore and Bhopal. A threshold
+tuned on in-distribution data does not transfer, so do not "optimise" it on
+Inria again and ship the result globally.
+
+**Why a histogram step.** A well-calibrated segmenter gives a bimodal
+probability map — a mass near 0, a mass near 1 — and the right cut is the valley
+between. Out of distribution the roof mode slides down and the valley slides
+with it, so finding the valley tracks the model's own confidence collapse with
+no labels anywhere. It is guarded hard: the map must genuinely be bimodal (Otsu
+separability ≥ 0.88 — a *uniform* distribution already scores 0.75, so a lower
+floor admits noise rather than weak evidence), the cut must imply a believable
+1–75% roof coverage, and it may never move the prior by more than 0.12.
+
+**Why OpenStreetMap, and the one asymmetry that makes it safe.** OSM is used for
+**recall only, never precision**. It is badly incomplete in India, so "we
+detected something OSM does not have" means nothing — but "OSM has a building
+here" was drawn by a human and is almost always true, so a miss is real
+evidence. Calibrating to *recover a known-real set* is immune to the
+incompleteness that would wreck an IoU or precision target. Press **Calibrate to
+this area**; the result is cached per ~5 km cell and every later analysis nearby
+picks it up for free.
+
+### What calibration found in Bangalore (2026-09-04)
+
+The first real out-of-distribution recall measurement this project has. A dense
+residential block in CV Raman Nagar, 142 OSM-mapped buildings, 35 tiles at z19:
+
+| threshold | recall of mapped buildings |
 |---|---|
-| inside a training city | 0.50 |
-| near one (< 900 km) | 0.45 |
-| outside | 0.40 |
+| 0.28 (band floor) | 0.31 |
+| 0.40 (the shipped prior) | 0.27 |
+| 0.50 | 0.23 |
+| 0.58 | 0.21 |
 
-Why: on Inria, 0.50 and 0.65 differ by 0.002 IoU — noise. Out of distribution
-the model is under-confident, and raising the threshold to 0.60 measurably cost
-**7–11% of detected roof area** across Bangalore and Bhopal. A threshold tuned
-on in-distribution data does not transfer, so do not "optimise" it on Inria
-again and ship the result globally. The UI discloses when the threshold was
-chosen automatically, and the slider overrides it.
+**The curve is almost flat, and that is the finding.** Dropping the threshold
+from 0.50 all the way to 0.28 buys 8 points of recall. Broken down by footprint:
 
-**TTA (the "High accuracy" toggle) is off by default** for the same reason:
-worth +0.010 IoU on Inria, but −5% detected area in Bangalore, at 8× the cost.
+| roof size | n | recall | median probability |
+|---|---|---|---|
+| 0–50 m² | 24 | 0.08 | **0.006** |
+| 50–100 m² | 47 | 0.17 | 0.049 |
+| 100–200 m² | 41 | 0.37 | 0.171 |
+| 200–500 m² | 13 | 0.46 | 0.343 |
+| 500+ m² | 16 | 0.44 | 0.187 |
+
+**56% of mapped buildings score below 0.10.** That is not under-confidence that
+a lower cut can rescue — it is a confident negative. The model is *silent* on
+small Indian rooftops, and no threshold anywhere reaches 0.006. This is why
+`reference_calibrate` can return `verdict: "needs_finetuning"` and say so
+instead of sliding the threshold down and manufacturing false positives out of
+tree canopy. Fixing it needs training data, not a slider — see CLAUDE.md
+"What to do next" #2.
+
+Ruled out first, so nobody re-checks it: this is **not** an OSM-vs-Esri
+georeferencing offset. Sweeping a rigid ±24 px (±7 m) shift of the footprints
+moves recall between 0.17 and 0.29, peaking at 0.29 at +4.7 m — flat, and
+within noise of the 0.27 at zero shift.
+
+**TTA (the "High accuracy" toggle) is off by default** for the same reason the
+threshold is regional: worth +0.010 IoU on Inria, but −5% detected area in
+Bangalore, at 8× the cost.
+
+## Regional defaults
+
+`regions.py` answers *what is known about this place before we look at a single
+pixel?* — currency, a representative tariff, installed cost per kWp, grid CO₂
+intensity, the threshold band, and the built form to expect. The UI calls
+`/api/region-profile` whenever the map settles and pre-fills the Assumptions
+panel, so a Sydney user does not get quoted rupees. **A field the user has
+edited is never overwritten.**
+
+The split is deliberate: tabulate what is genuinely regional (money, grid), and
+*measure* what is local (threshold, morphology). You cannot tabulate a threshold
+per city — there are tens of thousands of them and the built form changes across
+a single one.
+
+Every economic figure is indicative and user-editable, and each carries an
+`economics_confidence` of `medium` / `low` / `none` that the UI shows. An
+unlisted location gets currency-neutral placeholders that admit they are
+placeholders, which beats confidently wrong rupees.
+
+Bounding boxes are rectangles and countries are not: India's box contains Sri
+Lanka (carved back out), Nepal, Bhutan and most of Bangladesh (not — any
+rectangle around them also swallows real Indian territory). The blast radius is
+bounded, because those neighbours share India's threshold band and built form
+anyway, so only the *economics labels* are wrong, and `matched` in the API
+response lists every region that fired.
+
+### Morphology is chosen per area too
+
+The open/close kernel bridges gaps up to `k × metres_per_pixel`. The shipped
+`k=3` bridges ~0.9 m at z19 — wider than the alley between two Indian row
+houses, which is exactly the known defect where neighbours merge into one
+polygon. `choose_morph_kernel` measures the median detected footprint and drops
+to 2 px for small dense housing, rises to 4 px for warehouse roofs.
+
+One subtlety: the measurement may only ever argue *downward*. It is biased
+upward by the very merging the kernel is meant to reduce — on that Bangalore
+block the median component read 119 m² against a regional expectation of 60,
+because neighbours had already merged, and trusting it would have widened the
+kernel and made the merging worse.
+
+### Other reference sources
+
+OSM is the default because it is global, free, key-less and human-drawn. For
+bulk offline work, **Google Open Buildings** (CC-BY-4.0, ~1.8 B footprints
+across the Global South including all of India) and **Microsoft Global ML
+Building Footprints** are far more complete — but both are model-generated, so
+they are fine for *calibration* and must never be used as an evaluation set.
+Google Maps Platform is not an option: its terms prohibit running ML over its
+imagery and caching derived products.
 
 ## Solar exposure
 
@@ -141,7 +246,9 @@ terms and a 200k tiles/month free tier.
 
 | route | |
 |---|---|
-| `POST /api/analyze` | → `202 {job_id}`; `threshold` null = auto by region, `tta` bool |
+| `POST /api/analyze` | → `202 {job_id}`; `threshold` null = calibrated per area, `tta` bool |
+| `POST /api/calibrate` | → `202 {job_id}`; measures the threshold here against OpenStreetMap |
+| `GET /api/region-profile?lat=&lon=` | local currency/tariff/grid defaults, threshold band, any stored calibration |
 | `GET /api/solar-resource?lat=&lon=` | monthly GHI / tilt-plane / temperature |
 | `GET /api/jobs/{id}` | job state, progress, result |
 | `GET /api/model` | model card: architecture, metrics, limitations |

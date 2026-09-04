@@ -13,6 +13,10 @@ const state = {
   jobId: null,
   poll: null,
   result: null,
+  region: null,       // /api/region-profile for the current map centre
+  regionKey: null,
+  touched: new Set(), // assumption fields the user has edited by hand
+  calibrating: false,
 };
 
 /* ───────────────────────── boot ───────────────────────── */
@@ -312,6 +316,8 @@ function setAOI(b, final) {
        <b class="${over ? 'over' : ''}">${tiles}${over ? ` / ${state.cfg.max_tiles} max` : ''}</b></div>`;
 
   $('run-btn').disabled = over || !state.cfg.model_ready;
+  $('calibrate-btn').disabled = over || state.calibrating
+                                || !state.cfg.model_ready;
   if (over) {
     showError(`That area needs ${tiles} imagery tiles; the limit is ` +
               `${state.cfg.max_tiles}. Draw a smaller box.`);
@@ -358,6 +364,7 @@ function wireControls() {
 
   $('clear-btn').onclick = () => {
     setAOI(null);
+    $('calibrate-btn').disabled = true;
     state.map.getSource('roofs').setData(emptyFC());
     $('results').hidden = true;
     $('layer-toggle').hidden = true;
@@ -382,6 +389,15 @@ function wireControls() {
     $('threshold-auto').hidden = true;
   });
 
+  // A regional default must never overwrite a number the user typed.
+  Object.keys(REGION_FIELDS).forEach((id) => {
+    $(id).addEventListener('change', () => state.touched.add(id));
+  });
+
+  $('calibrate-btn').onclick = runCalibration;
+  state.map.on('moveend', () => scheduleRegionRefresh());
+  scheduleRegionRefresh(0);
+
   $('reset-assumptions').onclick = async () => {
     const a = await (await fetch('/api/assumptions')).json();
     const d = a.defaults;
@@ -400,6 +416,9 @@ function wireControls() {
     $('tilt').value = '';
     ['packing', 'efficiency', 'losses', 'threshold']
       .forEach((i) => $(i).dispatchEvent(new Event('input')));
+    // Reset means "back to what this place implies", not "back to India".
+    state.touched.clear();
+    applyRegionProfile();
   };
 
   $('run-btn').onclick = runAnalysis;
@@ -719,6 +738,219 @@ function wireSearch() {
 
 /* ───────────────────────── analysis ───────────────────────── */
 
+
+/* ─────────────── region profile & detection calibration ─────────────── */
+
+/* Fields the region table can pre-fill, and where they live in the DOM. Once
+   the user edits one it is never overwritten again — a regional default is a
+   starting point, not an opinion about their electricity bill. */
+const REGION_FIELDS = {
+  packing: 'packing_factor',
+  tariff: 'tariff_per_kwh',
+  cost: 'cost_per_kwp',
+  emission: 'grid_emission_kg_per_kwh',
+  'currency-symbol': 'currency_symbol',
+};
+
+let regionTimer = null;
+
+function scheduleRegionRefresh(delay = 400) {
+  clearTimeout(regionTimer);
+  regionTimer = setTimeout(refreshRegionProfile, delay);
+}
+
+async function refreshRegionProfile() {
+  if (!state.map) return;
+  const c = state.map.getCenter();
+  // ~1 km of granularity: panning across a city must not re-ask every frame.
+  const key = `${c.lat.toFixed(2)},${c.lng.toFixed(2)}`;
+  if (key === state.regionKey) return;
+  state.regionKey = key;
+  try {
+    const r = await fetch(`/api/region-profile?lat=${c.lat}&lon=${c.lng}`);
+    if (!r.ok) return;
+    state.region = await r.json();
+    applyRegionProfile();
+  } catch { /* the app is fully usable without this */ }
+}
+
+function applyRegionProfile() {
+  const rp = state.region;
+  if (!rp) return;
+  const eco = rp.region.economics;
+
+  for (const [id, key] of Object.entries(REGION_FIELDS)) {
+    if (state.touched.has(id)) continue;
+    const el = $(id);
+    if (!el || eco[key] === undefined) continue;
+    el.value = eco[key];
+    el.dispatchEvent(new Event('input'));
+  }
+
+  if (!state.thresholdTouched) {
+    const t = rp.calibration.threshold;
+    $('threshold').value = t;
+    $('threshold-out').textContent = (+t).toFixed(2);
+    const tag = $('threshold-auto');
+    tag.hidden = false;
+    tag.textContent = rp.calibration.source === 'reference' ? 'measured' : 'auto';
+    tag.title = rp.calibration.steps.join('  →  ');
+  }
+
+  const conf = rp.region.economics_confidence;
+  const measured = rp.calibration.source === 'reference';
+  const note = conf === 'none'
+    ? 'no local rates on file — the costs below are placeholders'
+    : `indicative ${conf}-confidence rates, in ${eco.currency}`;
+  $('region-chip').hidden = false;
+  $('region-chip').innerHTML =
+    `<b>${esc(rp.region.name)}</b>
+     <span class="rc-note">${esc(note)}</span>` +
+    (measured
+      ? '<span class="rc-note">· detection measured here</span>'
+      : '');
+
+  $('calibrate-btn').disabled = !state.aoi || state.calibrating
+                               || !state.cfg.model_ready;
+}
+
+/* Poll any job to a terminal state. `pollJob` stays as it is for analysis; this
+   is the generic version calibration uses. */
+function awaitJob(jid, onTick) {
+  return new Promise((resolve, reject) => {
+    const t = setInterval(async () => {
+      try {
+        const j = await (await fetch(`/api/jobs/${jid}`)).json();
+        onTick?.(j);
+        if (j.state === 'done') { clearInterval(t); resolve(j.result); }
+        else if (j.state === 'error') { clearInterval(t); reject(new Error(j.error)); }
+      } catch (e) { clearInterval(t); reject(e); }
+    }, 700);
+  });
+}
+
+async function runCalibration() {
+  if (!state.aoi || state.calibrating) return;
+  state.calibrating = true;
+  $('calibrate-btn').disabled = true;
+  $('calib-report').hidden = true;
+  $('calib-state').textContent = 'starting…';
+
+  try {
+    const r = await fetch('/api/calibrate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bounds: state.aoi, zoom: state.cfg.serving_zoom }),
+    });
+    if (!r.ok) throw new Error((await r.json()).detail || `HTTP ${r.status}`);
+    const res = await awaitJob((await r.json()).job_id,
+                               (j) => { $('calib-state').textContent = j.message; });
+
+    $('calib-state').textContent = '';
+    renderCalibrationReport(res);
+
+    // A measurement beats the slider's current guess, so adopt it — and drop
+    // the "touched" flag, because this value is no longer a guess.
+    const t = res.calibration.threshold;
+    $('threshold').value = t;
+    $('threshold-out').textContent = (+t).toFixed(2);
+    state.thresholdTouched = false;
+    $('threshold-auto').hidden = false;
+    $('threshold-auto').textContent =
+      res.calibration.source === 'reference' ? 'measured' : 'auto';
+    state.regionKey = null;          // force a re-read so the chip catches up
+    scheduleRegionRefresh(0);
+  } catch (e) {
+    $('calib-state').textContent = '';
+    const box = $('calib-report');
+    box.hidden = false;
+    box.className = 'calib-report bad';
+    box.textContent = e.message;
+  } finally {
+    state.calibrating = false;
+    $('calibrate-btn').disabled = !state.aoi;
+  }
+}
+
+function renderCalibrationReport(res) {
+  const cal = res.calibration, ref = res.reference || {};
+  const box = $('calib-report');
+  box.hidden = false;
+  box.className = 'calib-report' + (cal.verdict === 'needs_finetuning' ? ' bad' : '');
+  box.innerHTML =
+    `<div class="kv">
+       <div class="kv-row"><span>threshold</span><span>${cal.threshold}</span></div>
+       <div class="kv-row"><span>mapped buildings used</span>
+         <span>${ref.usable ?? '—'} of ${ref.found ?? '—'}</span></div>
+       <div class="kv-row"><span>of those, found</span>
+         <span>${cal.diagnostics?.reference_recall != null
+                 ? Math.round(cal.diagnostics.reference_recall * 100) + '%' : '—'}</span></div>
+       <div class="kv-row"><span>model is silent on</span>
+         <span>${cal.diagnostics?.silent_fraction != null
+                 ? Math.round(cal.diagnostics.silent_fraction * 100) + '% of them'
+                 : '—'}</span></div>
+     </div>
+     <p class="hint tiny" style="margin-top:8px">${esc(cal.note)}</p>` +
+    renderRecallBySize(cal.diagnostics?.recall_by_size) +
+    `<p class="hint tiny">${esc(ref.caveat || '')}</p>`;
+}
+
+/* Which of the user's buildings the number can be trusted for. A flat 30%
+   recall and a 30% that is 8% on houses and 46% on large roofs are completely
+   different answers, and only the second one is actionable. */
+function renderRecallBySize(bands) {
+  if (!bands || !bands.length) return '';
+  const rows = bands.map((b) => {
+    const label = b.to_m2 == null ? `${b.from_m2}+ m²`
+                                  : `${b.from_m2}–${b.to_m2} m²`;
+    return `<div class="kv-row"><span>${label} (n=${b.n})</span>
+              <span>${Math.round(b.recall * 100)}%</span></div>`;
+  }).join('');
+  return `<p class="hint tiny" style="margin-top:10px">Found, by roof size:</p>
+          <div class="kv">${rows}</div>`;
+}
+
+function renderCalibration(res) {
+  const cal = res.calibration;
+  const block = $('detection-block');
+  if (!cal) { block.hidden = true; return; }
+  block.hidden = false;
+
+  const labels = {
+    reference: 'measured here',
+    histogram: 'self-calibrated',
+    prior: 'regional prior',
+    user: 'set by hand',
+  };
+  const pill = $('calib-pill');
+  pill.textContent = labels[cal.source] || cal.source;
+  pill.className = 'pill calib-' + cal.source;
+
+  const det = res.detection || {};
+  const reg = res.region;
+  const rows = [
+    ['threshold used', det.threshold ?? cal.threshold],
+    ['chosen by', labels[cal.source] || cal.source],
+    ['allowed range here', `${cal.band[0]} – ${cal.band[1]}`],
+    ['region', reg ? reg.name : '—'],
+    ['closing kernel', det.morph_kernel_px ? `${det.morph_kernel_px} px` : '—'],
+  ];
+  const morph = cal.diagnostics?.morphology;
+  if (morph?.median_component_m2 != null) {
+    rows.push(['median roof detected', `${morph.median_component_m2} m²`]);
+  }
+
+  $('calib-detail').innerHTML =
+    `<div class="kv">${rows.map(([k, v]) =>
+       `<div class="kv-row"><span>${esc(k)}</span><span>${esc(String(v))}</span></div>`
+     ).join('')}</div>
+     <ol class="calib-steps">${(cal.steps || [])
+       .map((x) => `<li>${esc(x)}</li>`).join('')}</ol>` +
+    (morph?.reason ? `<p class="hint tiny">${esc(morph.reason)}.</p>` : '') +
+    (cal.verdict === 'needs_finetuning'
+      ? `<p class="calib-warn">${esc(cal.note)}</p>` : '');
+}
+
 function payload() {
   const tilt = $('tilt').value.trim();
   return {
@@ -727,6 +959,7 @@ function payload() {
     // null = let the server choose based on how well the model knows this
     // region. Only override once the user has actually moved the slider.
     threshold: state.thresholdTouched ? +$('threshold').value : null,
+    use_calibration: true,
     tta: $('tta').checked,
     packing_factor: +$('packing').value,
     module_efficiency: +$('efficiency').value,
@@ -882,6 +1115,7 @@ function renderResult(res) {
       <div class="card-sub">${esc(sub)}</div>
     </div>`).join('');
 
+  renderCalibration(res);
   renderSolarResource(res.solar_resource, s);
 
   drawChart(s.monthly_kwh);

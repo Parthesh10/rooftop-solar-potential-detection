@@ -272,3 +272,55 @@ Locally (~2.5 h, batch 4 to stay inside 4 GB):
    --tta` averages the 8 dihedral transforms (+1–2 IoU, 8× cost).
 3. **Multi-class ARA** — reaching true *available* rooftop area (excluding
    chimneys, skylights, existing panels) needs multi-class labels. Research item.
+
+---
+
+## Out-of-distribution recall, measured (2026-09-04)
+
+Every number above is Inria. This is the first measurement of the shipped model
+on rooftops it was never trained on, against **human-drawn** reference
+footprints rather than auto-generated ones.
+
+Method: `webapp/calibration.py`, `POST /api/calibrate`. A dense residential
+block in CV Raman Nagar, Bangalore (77.654–77.658 E, 12.984–12.987 N), 35 tiles
+at z19, 142 OpenStreetMap building ways, 141 of them wholly inside the mosaic. A
+footprint counts as recovered when the median model probability inside it clears
+the threshold.
+
+| threshold | recall of mapped buildings | positive pixel fraction |
+|---|---|---|
+| 0.28 | 0.31 | 0.137 |
+| 0.40 | 0.27 | 0.124 |
+| 0.50 | 0.23 | 0.110 |
+| 0.58 | 0.21 | 0.101 |
+
+By footprint size, at threshold 0.40:
+
+| roof size | n | recall | median probability inside |
+|---|---|---|---|
+| 0–50 m² | 24 | 0.08 | 0.006 |
+| 50–100 m² | 47 | 0.17 | 0.049 |
+| 100–200 m² | 41 | 0.37 | 0.171 |
+| 200–500 m² | 13 | 0.46 | 0.343 |
+| 500+ m² | 16 | 0.44 | 0.187 |
+
+**56% of mapped buildings have a median probability below 0.10.** The failure is
+not a badly placed cut point — the model returns a confident negative on small
+Indian rooftops. Recall moves 8 points across the entire usable threshold range,
+so thresholding is not the lever. Detected roof area rose 14,125 → 17,927 m²
+(+27%) going from 0.50 to 0.28, while the building *count* fell 30 → 27: the
+lower cut merges neighbours rather than finding new houses.
+
+**This is a recall figure against an incomplete reference, not an IoU and not a
+precision figure.** OSM under-maps Indian residential blocks, so a detection OSM
+lacks is not evidence of a false positive. The asymmetry is the point: an OSM
+building was drawn by a human, so a miss is real.
+
+Not a georeferencing artefact: sweeping a rigid ±24 px (±7 m) shift of the OSM
+footprints moves recall between 0.17 and 0.29, peaking at 0.29 at +4.7 m against
+0.27 at zero shift — flat, and within noise. Consistent with the 2026-09-03
+finding of no mask-to-polygon offset.
+
+**Do not compare 0.27 to 0.7712.** One is recall against human-mapped footprints
+in Bangalore; the other is pooled IoU on Inria val. Different metric, different
+labels, different continent.

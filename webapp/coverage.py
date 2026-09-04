@@ -110,11 +110,19 @@ def suggested_threshold(level: str, default: float = 0.50) -> float:
 def threshold_note(level: str, threshold: float) -> str | None:
     """Plain-language reason for a non-default threshold, or None."""
     if level == "untested":
-        return (f"Detection sensitivity was raised (threshold {threshold:.2f} "
-                f"instead of 0.50) because the model is under-confident on "
-                f"rooftops unlike its training data and would otherwise miss "
-                f"buildings here. If you see areas marked that are not roofs, "
-                f"raise the threshold under Detection sensitivity.")
+        # Do not oversell this. Measured in Bangalore on 2026-09-04, moving the
+        # threshold across its whole range changes recall by ~8 points, because
+        # more than half of the buildings people have mapped there score below
+        # 0.10 — a confident negative that no cut point reaches. The relaxed
+        # threshold is a real but small correction, and saying otherwise would
+        # leave the user thinking the slider can fix an under-count it cannot.
+        return (f"Detection sensitivity was relaxed (threshold {threshold:.2f} "
+                f"instead of 0.50) because the model is less confident on "
+                f"rooftops unlike its training data. Expect this to be a small "
+                f"correction, not a fix: outside the training regions the model "
+                f"misses many buildings outright, and no threshold recovers "
+                f"those. Press “Calibrate to this area” to measure how many it "
+                f"is missing here.")
     if level == "regional":
         return (f"Detection sensitivity was raised slightly (threshold "
                 f"{threshold:.2f}) as this area sits outside the training "

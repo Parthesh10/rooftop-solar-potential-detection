@@ -113,9 +113,16 @@ def _contour_to_lonlat(contour: np.ndarray, grid: TileGrid) -> list[tuple[float,
 
 def mask_to_buildings(mask: np.ndarray, probs: np.ndarray, grid: TileGrid,
                       min_area_m2: float = MIN_BUILDING_AREA_M2,
-                      simplify_frac: float = POLYGON_SIMPLIFY_FRAC) -> list[Building]:
-    """Vectorise a boolean mask into geodesically-measured buildings."""
-    mask = clean_mask(mask)
+                      simplify_frac: float = POLYGON_SIMPLIFY_FRAC,
+                      morph_kernel_px: int = MORPH_KERNEL_PX) -> list[Building]:
+    """Vectorise a boolean mask into geodesically-measured buildings.
+
+    ``morph_kernel_px`` is chosen per area by
+    ``calibration.choose_morph_kernel``: the shipped 3 px bridges ~0.9 m at the
+    serving resolution, which is wider than the alley between two Indian row
+    houses and merges them into one polygon.
+    """
+    mask = clean_mask(mask, morph_kernel_px)
     binary = (mask.astype(np.uint8) * 255)
 
     contours, hierarchy = cv2.findContours(

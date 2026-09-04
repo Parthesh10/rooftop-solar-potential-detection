@@ -84,6 +84,8 @@
           local to you.
         </p>
 
+        <div id="region-chip" class="region-chip" hidden></div>
+
         <div class="field">
           <label for="packing">
             Packing factor
@@ -168,11 +170,23 @@
           </div>
           <p class="hint tiny">
             Lower catches more roof but more false positives; higher is stricter.
-            Left alone, this is chosen per region: <b>0.50</b> inside the
-            training cities, lower outside them, because the model is
-            under-confident on rooftops it was not trained on and a strict cut
-            deletes real buildings. Moving the slider overrides that.
+            Left alone, this is chosen for the area you are looking at — see
+            below. Moving the slider overrides all of it.
           </p>
+
+          <div class="calib-row">
+            <button id="calibrate-btn" class="btn btn-ghost btn-sm" disabled>
+              Calibrate to this area
+            </button>
+            <span id="calib-state" class="hint tiny"></span>
+          </div>
+          <p class="hint tiny">
+            Checks the model against real building outlines that people have
+            mapped in OpenStreetMap here, and picks the threshold that finds
+            them. Takes about a minute and is remembered for this
+            neighbourhood, so you only pay for it once.
+          </p>
+          <div id="calib-report" class="calib-report" hidden></div>
         </details>
       </section>
 
@@ -284,6 +298,14 @@
       <section class="result-block">
         <h3>How this was calculated</h3>
         <div id="chain" class="chain"></div>
+      </section>
+
+      <section class="result-block" id="detection-block" hidden>
+        <div class="block-head">
+          <h3>How detection was tuned here</h3>
+          <span id="calib-pill" class="pill"></span>
+        </div>
+        <div id="calib-detail"></div>
       </section>
 
       <section class="result-block">
