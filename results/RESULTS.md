@@ -488,15 +488,20 @@ That is the better trade for an app that multiplies area into money.
 
 ### Neither is a safe global default
 
-| model | Inria IoU (5 val tiles, thr 0.50) |
-|---|---|
-| shipped | **0.7996** |
-| envelope fine-tune | 0.6540 |
-| OSM fine-tune | 0.6394 |
+| model | Inria IoU (5 val tiles, thr 0.50) | full 25-tile val (2026-09-06) |
+|---|---|---|
+| shipped | **0.7996** | **0.7712** |
+| envelope fine-tune | 0.6540 | 0.6828 |
+| OSM fine-tune | 0.6394 | 0.6708 |
 
-Fine-tuning on ~100 narrow tiles costs **~0.16 Inria IoU regardless of label
-source**. Better labels fixed *what* the model predicts; they did nothing about
+Fine-tuning on ~100 narrow tiles costs Inria IoU regardless of label source.
+Better labels fixed *what* the model predicts; they did nothing about
 forgetting. Both fine-tunes stay opt-in behind `RSOLAR_MODEL`.
+
+> **The magnitude here was overstated and is corrected below.** The 5-tile
+> column made the cost look like ~0.16. Measured on the full 25-tile official
+> val split it is **~0.10**. The right-hand column was added on 2026-09-06; use
+> it, and see "A correction to an earlier number" at the end of this file.
 
 That is what `kaggle_joint/` is for, and it is only coherent now that both
 halves mean the same thing: Inria footprints plus the OSM-relabelled Indian
