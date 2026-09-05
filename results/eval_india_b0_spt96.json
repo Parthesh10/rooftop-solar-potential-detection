@@ -1,0 +1,68 @@
+{
+  "bounds": [
+    77.654,
+    12.984,
+    77.658,
+    12.987
+  ],
+  "zoom": 19,
+  "provider": "esri",
+  "metres_per_px": 0.2909,
+  "reference": "OpenStreetMap building ways (incomplete \u2014 recall only)",
+  "reference_buildings": 142,
+  "reference_area_m2": 30436,
+  "threshold": 0.5,
+  "models": [
+    {
+      "checkpoint": "unetpp_effb0_inria_spt96_20260906.pt",
+      "arch": "unet++",
+      "encoder": "efficientnet-b0",
+      "threshold": 0.5,
+      "iou": 0.202,
+      "precision": 0.5425,
+      "recall": 0.2435,
+      "predicted_area_m2": 13662,
+      "area_ratio_vs_osm": 0.449,
+      "footprints_scored": 141,
+      "footprint_recall": 0.191,
+      "silent_fraction": 0.716,
+      "by_size": [
+        {
+          "from_m2": 0,
+          "to_m2": 50,
+          "n": 24,
+          "recall": 0.042,
+          "median_probability": 0.0023
+        },
+        {
+          "from_m2": 50,
+          "to_m2": 100,
+          "n": 47,
+          "recall": 0.085,
+          "median_probability": 0.0035
+        },
+        {
+          "from_m2": 100,
+          "to_m2": 200,
+          "n": 41,
+          "recall": 0.268,
+          "median_probability": 0.0933
+        },
+        {
+          "from_m2": 200,
+          "to_m2": 500,
+          "n": 13,
+          "recall": 0.462,
+          "median_probability": 0.1836
+        },
+        {
+          "from_m2": 500,
+          "to_m2": null,
+          "n": 16,
+          "recall": 0.312,
+          "median_probability": 0.0174
+        }
+      ]
+    }
+  ]
+}

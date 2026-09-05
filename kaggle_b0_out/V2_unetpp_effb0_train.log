@@ -1,0 +1,105 @@
+[train] run V2_unetpp_effb0 starting at epoch 0/50
+[ckpt] mid-epoch save at epoch 0 step 185
+[ckpt] mid-epoch save at epoch 0 step 658
+ep   0/49  loss 0.3974  iou 0.6182  lr 1.20e-04  772s  |  val_loss 0.3572  val_iou 0.6208  *best*  peak 13.6G
+[ckpt] mid-epoch save at epoch 1 step 473
+ep   1/49  loss 0.2644  iou 0.7207  lr 1.80e-04  591s  |  val_loss 0.3250  val_iou 0.6122  peak 10.8G
+[ckpt] mid-epoch save at epoch 2 step 473
+ep   2/49  loss 0.2312  iou 0.7448  lr 2.40e-04  589s  |  val_loss 0.2238  val_iou 0.6826  *best*  peak 10.8G
+[ckpt] mid-epoch save at epoch 3 step 473
+ep   3/49  loss 0.2139  iou 0.7540  lr 3.00e-04  589s  |  val_loss 0.2244  val_iou 0.6753  peak 10.8G
+[ckpt] mid-epoch save at epoch 4 step 473
+ep   4/49  loss 0.2081  iou 0.7577  lr 3.00e-04  589s  |  val_loss 0.2374  val_iou 0.6718  peak 10.8G
+[ckpt] mid-epoch save at epoch 5 step 473
+ep   5/49  loss 0.1952  iou 0.7692  lr 3.00e-04  589s  |  val_loss 0.2114  val_iou 0.6949  *best*  peak 10.8G
+[ckpt] mid-epoch save at epoch 6 step 471
+ep   6/49  loss 0.1932  iou 0.7732  lr 2.99e-04  590s  |  val_loss 0.2346  val_iou 0.6654  peak 10.8G
+[ckpt] mid-epoch save at epoch 7 step 473
+ep   7/49  loss 0.1866  iou 0.7785  lr 2.97e-04  591s  |  val_loss 0.2128  val_iou 0.6998  *best*  peak 10.8G
+[ckpt] mid-epoch save at epoch 8 step 473
+ep   8/49  loss 0.1807  iou 0.7832  lr 2.94e-04  589s  |  val_loss 0.2101  val_iou 0.7014  *best*  peak 10.8G
+[ckpt] mid-epoch save at epoch 9 step 472
+ep   9/49  loss 0.1767  iou 0.7873  lr 2.91e-04  589s  |  val_loss 0.2020  val_iou 0.7077  *best*  peak 10.8G
+[ckpt] mid-epoch save at epoch 10 step 472
+ep  10/49  loss 0.1707  iou 0.7924  lr 2.87e-04  591s  |  val_loss 0.2003  val_iou 0.7109  *best*  peak 10.8G
+[ckpt] mid-epoch save at epoch 11 step 473
+ep  11/49  loss 0.1738  iou 0.7905  lr 2.82e-04  589s  |  val_loss 0.2017  val_iou 0.7127  *best*  peak 10.8G
+[ckpt] mid-epoch save at epoch 12 step 473
+ep  12/49  loss 0.1660  iou 0.7970  lr 2.77e-04  589s  |  val_loss 0.1991  val_iou 0.7108  peak 10.8G
+[ckpt] mid-epoch save at epoch 13 step 473
+ep  13/49  loss 0.1628  iou 0.8008  lr 2.71e-04  589s  |  val_loss 0.1971  val_iou 0.7119  peak 10.8G
+[ckpt] mid-epoch save at epoch 14 step 473
+ep  14/49  loss 0.1621  iou 0.8023  lr 2.65e-04  589s  |  val_loss 0.1952  val_iou 0.7156  *best*  peak 10.8G
+[ckpt] mid-epoch save at epoch 15 step 472
+ep  15/49  loss 0.1594  iou 0.8046  lr 2.58e-04  589s  |  val_loss 0.1985  val_iou 0.7123  peak 10.8G
+[ckpt] mid-epoch save at epoch 16 step 472
+ep  16/49  loss 0.1601  iou 0.8050  lr 2.50e-04  589s  |  val_loss 0.2011  val_iou 0.7158  *best*  peak 10.8G
+[ckpt] mid-epoch save at epoch 17 step 472
+ep  17/49  loss 0.1545  iou 0.8093  lr 2.42e-04  589s  |  val_loss 0.1968  val_iou 0.7116  peak 10.8G
+[ckpt] mid-epoch save at epoch 18 step 472
+ep  18/49  loss 0.1523  iou 0.8113  lr 2.34e-04  589s  |  val_loss 0.1997  val_iou 0.7164  *best*  peak 10.8G
+[ckpt] mid-epoch save at epoch 19 step 472
+ep  19/49  loss 0.1528  iou 0.8117  lr 2.25e-04  589s  |  val_loss 0.1969  val_iou 0.7126  peak 10.8G
+[ckpt] mid-epoch save at epoch 20 step 472
+ep  20/49  loss 0.1482  iou 0.8158  lr 2.16e-04  589s  |  val_loss 0.1933  val_iou 0.7213  *best*  peak 10.8G
+[ckpt] mid-epoch save at epoch 21 step 472
+ep  21/49  loss 0.1466  iou 0.8174  lr 2.06e-04  589s  |  val_loss 0.2000  val_iou 0.7125  peak 10.8G
+[ckpt] mid-epoch save at epoch 22 step 472
+ep  22/49  loss 0.1445  iou 0.8195  lr 1.96e-04  589s  |  val_loss 0.1959  val_iou 0.7175  peak 10.8G
+[ckpt] mid-epoch save at epoch 23 step 472
+ep  23/49  loss 0.1440  iou 0.8209  lr 1.86e-04  589s  |  val_loss 0.1923  val_iou 0.7247  *best*  peak 10.8G
+[ckpt] mid-epoch save at epoch 24 step 473
+ep  24/49  loss 0.1448  iou 0.8200  lr 1.76e-04  589s  |  val_loss 0.1914  val_iou 0.7254  *best*  peak 10.8G
+[ckpt] mid-epoch save at epoch 25 step 473
+ep  25/49  loss 0.1398  iou 0.8242  lr 1.66e-04  589s  |  val_loss 0.1925  val_iou 0.7259  *best*  peak 10.8G
+[ckpt] mid-epoch save at epoch 26 step 473
+ep  26/49  loss 0.1382  iou 0.8263  lr 1.55e-04  589s  |  val_loss 0.1987  val_iou 0.7207  peak 10.8G
+[ckpt] mid-epoch save at epoch 27 step 472
+ep  27/49  loss 0.1369  iou 0.8273  lr 1.45e-04  590s  |  val_loss 0.1900  val_iou 0.7259  *best*  peak 10.8G
+[ckpt] mid-epoch save at epoch 28 step 473
+ep  28/49  loss 0.1354  iou 0.8288  lr 1.34e-04  589s  |  val_loss 0.1922  val_iou 0.7258  peak 10.8G
+[ckpt] mid-epoch save at epoch 29 step 473
+ep  29/49  loss 0.1336  iou 0.8306  lr 1.24e-04  589s  |  val_loss 0.1908  val_iou 0.7302  *best*  peak 10.8G
+[ckpt] mid-epoch save at epoch 30 step 468
+ep  30/49  loss 0.1320  iou 0.8324  lr 1.14e-04  592s  |  val_loss 0.1907  val_iou 0.7282  peak 10.8G
+[ckpt] mid-epoch save at epoch 31 step 472
+ep  31/49  loss 0.1309  iou 0.8334  lr 1.04e-04  589s  |  val_loss 0.1934  val_iou 0.7249  peak 10.8G
+[ckpt] mid-epoch save at epoch 32 step 472
+ep  32/49  loss 0.1301  iou 0.8344  lr 9.38e-05  589s  |  val_loss 0.1891  val_iou 0.7296  peak 10.8G
+[ckpt] mid-epoch save at epoch 33 step 472
+ep  33/49  loss 0.1283  iou 0.8361  lr 8.42e-05  589s  |  val_loss 0.1918  val_iou 0.7288  peak 10.8G
+[ckpt] mid-epoch save at epoch 34 step 473
+ep  34/49  loss 0.1272  iou 0.8370  lr 7.50e-05  589s  |  val_loss 0.1895  val_iou 0.7326  *best*  peak 10.8G
+[ckpt] mid-epoch save at epoch 35 step 472
+ep  35/49  loss 0.1261  iou 0.8381  lr 6.61e-05  589s  |  val_loss 0.1897  val_iou 0.7306  peak 10.8G
+[ckpt] mid-epoch save at epoch 36 step 471
+ep  36/49  loss 0.1253  iou 0.8394  lr 5.77e-05  590s  |  val_loss 0.1893  val_iou 0.7316  peak 10.8G
+[ckpt] mid-epoch save at epoch 37 step 473
+ep  37/49  loss 0.1246  iou 0.8398  lr 4.96e-05  589s  |  val_loss 0.1906  val_iou 0.7319  peak 10.8G
+[ckpt] mid-epoch save at epoch 38 step 472
+ep  38/49  loss 0.1237  iou 0.8408  lr 4.21e-05  589s  |  val_loss 0.1891  val_iou 0.7328  *best*  peak 10.8G
+[ckpt] mid-epoch save at epoch 39 step 473
+ep  39/49  loss 0.1230  iou 0.8416  lr 3.51e-05  589s  |  val_loss 0.1898  val_iou 0.7330  *best*  peak 10.8G
+[ckpt] mid-epoch save at epoch 40 step 472
+ep  40/49  loss 0.1224  iou 0.8423  lr 2.86e-05  590s  |  val_loss 0.1902  val_iou 0.7309  peak 10.8G
+[ckpt] mid-epoch save at epoch 41 step 472
+ep  41/49  loss 0.1217  iou 0.8432  lr 2.28e-05  589s  |  val_loss 0.1893  val_iou 0.7332  *best*  peak 10.8G
+[ckpt] mid-epoch save at epoch 42 step 471
+ep  42/49  loss 0.1212  iou 0.8435  lr 1.76e-05  590s  |  val_loss 0.1890  val_iou 0.7320  peak 10.8G
+[ckpt] mid-epoch save at epoch 43 step 472
+ep  43/49  loss 0.1207  iou 0.8443  lr 1.30e-05  589s  |  val_loss 0.1891  val_iou 0.7334  *best*  peak 10.8G
+[ckpt] mid-epoch save at epoch 44 step 473
+ep  44/49  loss 0.1206  iou 0.8442  lr 9.05e-06  589s  |  val_loss 0.1892  val_iou 0.7332  peak 10.8G
+[ckpt] mid-epoch save at epoch 45 step 268
+[ckpt] mid-epoch save at epoch 45 step 744
+ep  45/49  loss 0.1204  iou 0.8446  lr 5.81e-06  718s  |  val_loss 0.1890  val_iou 0.7337  *best*  peak 10.8G
+[ckpt] mid-epoch save at epoch 46 step 473
+ep  46/49  loss 0.1200  iou 0.8449  lr 3.28e-06  589s  |  val_loss 0.1896  val_iou 0.7342  *best*  peak 10.8G
+[ckpt] mid-epoch save at epoch 47 step 473
+ep  47/49  loss 0.1196  iou 0.8453  lr 1.46e-06  589s  |  val_loss 0.1896  val_iou 0.7329  peak 10.8G
+[ckpt] mid-epoch save at epoch 48 step 473
+ep  48/49  loss 0.1196  iou 0.8450  lr 3.65e-07  589s  |  val_loss 0.1891  val_iou 0.7327  peak 10.8G
+[ckpt] mid-epoch save at epoch 49 step 473
+ep  49/49  loss 0.1198  iou 0.8451  lr 0.00e+00  589s  |  val_loss 0.1888  val_iou 0.7323  peak 10.8G
+[gpu] throttled 0s total, 0 thermal cooldown(s)
+[train] finished
