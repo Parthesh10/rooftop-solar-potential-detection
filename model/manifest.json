@@ -69,6 +69,114 @@
       ],
       "default": true
     },
+    "unetpp_effb0_inria_spt96_20260906.pt": {
+      "arch": "unet++",
+      "encoder": "efficientnet-b0",
+      "encoder_weights": "imagenet",
+      "in_channels": 3,
+      "out_channels": 1,
+      "bilinear": false,
+      "stats_key": "imagenet",
+      "threshold": 0.5,
+      "tta": false,
+      "trained_on": "inria-official",
+      "epochs": 50,
+      "window": 512,
+      "gsd_m_per_px": 0.3,
+      "serving_zoom": 19,
+      "default": false,
+      "label_semantics": "building-footprint",
+      "note": "THE BEST INRIA MODEL, AND DELIBERATELY NOT THE DEFAULT. Identical to the shipped model except samples-per-tile 48 -> 96, i.e. twice as many training windows from the same 155 tiles. That bought +0.0131 pooled Inria IoU and cost a fifth of the little Indian recall the shipped model had: footprint recall 0.241 -> 0.191, silent fraction 0.56 -> 0.72, detected area 0.70x -> 0.45x the OpenStreetMap reference. More Western data makes a more Western model. Promote it only if the deployment target is genuinely Inria-like.",
+      "metrics_verified": {
+        "harness": "scripts/eval_inria.py (pooled IoU, 25 official val tiles) and scripts/eval_india_osm.py (CV Raman Nagar, Bangalore, 142 OSM footprints)",
+        "measured": "2026-09-06",
+        "val": {
+          "iou": 0.7843,
+          "f1": 0.8791,
+          "precision": 0.8598,
+          "recall": 0.8993,
+          "threshold": 0.5,
+          "tta": false,
+          "shipped_baseline_iou": 0.7712
+        },
+        "val_best_threshold": {
+          "iou": 0.7852,
+          "threshold": 0.6
+        },
+        "_per_window_mean": {
+          "iou": 0.7342,
+          "note": "what the training loop printed; the shipped model's comparable figure is 0.7233"
+        },
+        "bangalore_vs_osm_at_0.50": {
+          "iou": 0.202,
+          "precision": 0.5425,
+          "pixel_recall": 0.2435,
+          "footprint_recall": 0.191,
+          "silent_fraction": 0.716,
+          "predicted_area_ratio_vs_osm": 0.449,
+          "shipped_baseline_footprint_recall": 0.241,
+          "shipped_baseline_silent_fraction": 0.56
+        }
+      },
+      "limitations": [
+        "Regresses Indian recall relative to the shipped model — the opposite of the project's stated priority.",
+        "Trained on the same five Western cities; more data from them, not more places."
+      ]
+    },
+    "joint_v3_effb0_20260906.pt": {
+      "arch": "unet++",
+      "encoder": "efficientnet-b0",
+      "encoder_weights": "imagenet",
+      "in_channels": 3,
+      "out_channels": 1,
+      "bilinear": false,
+      "stats_key": "imagenet",
+      "threshold": 0.5,
+      "tta": false,
+      "trained_on": "inria-official + indian-tiles-osm-relabelled",
+      "epochs": 50,
+      "window": 512,
+      "gsd_m_per_px": 0.3,
+      "serving_zoom": 19,
+      "default": false,
+      "label_semantics": "building-footprint",
+      "recommended_packing_factor": 0.7,
+      "note": "Joint training on Inria plus all 103 OSM-relabelled Indian tiles (repeated 20x, ~22% of each epoch). It DID solve the forgetting problem the fine-tunes have — Inria 0.7662 against the shipped 0.7712, where fine-tuning costs ~0.16 — but it captured only about a third of the Indian gain that fine-tuning on the same tiles gets (footprint recall 0.390 vs finetune_osm's 0.716) and left the silent fraction untouched at 0.56. Not promoted: it inflates detected area to 1.28x the OSM reference while its Bangalore IoU does not improve, which is a poor trade for an app that multiplies area into money.",
+      "metrics_verified": {
+        "harness": "scripts/eval_inria.py (pooled IoU, 25 official val tiles) and scripts/eval_india_osm.py (CV Raman Nagar, Bangalore, 142 OSM footprints)",
+        "measured": "2026-09-06",
+        "val": {
+          "iou": 0.7662,
+          "f1": 0.8676,
+          "precision": 0.8455,
+          "recall": 0.891,
+          "threshold": 0.5,
+          "tta": false,
+          "shipped_baseline_iou": 0.7712
+        },
+        "_per_window_mean": {
+          "iou": 0.7175
+        },
+        "bangalore_vs_osm_at_0.50": {
+          "iou": 0.2417,
+          "precision": 0.3473,
+          "pixel_recall": 0.4431,
+          "footprint_recall": 0.39,
+          "silent_fraction": 0.56,
+          "predicted_area_ratio_vs_osm": 1.276,
+          "shipped_baseline_footprint_recall": 0.241,
+          "finetune_osm_footprint_recall": 0.716
+        },
+        "repeat_run_noise": {
+          "note": "joint_effb0_20260905.pt and this checkpoint are, as far as the surviving artifacts show, two executions of the SAME configuration — identical epoch size and training loss to four decimals over 46 epochs, best_val_iou differing by 7e-6. Treat the pair as a noise estimate, not a comparison: Inria reproduces to ~0.0001 while the Bangalore figures move ~0.02 (pixel recall 0.460 vs 0.443, footprint recall 0.369 vs 0.390, silent 0.546 vs 0.560). An Indian difference under 0.02 from one run means nothing. A claim that one of them trained on 16 tiles rather than 103 could NOT be substantiated — no such training log survives in the repo."
+        }
+      },
+      "limitations": [
+        "Detects 1.28x the OpenStreetMap reference area in Bangalore, and OSM's incompleteness means that cannot be verified as correct.",
+        "Bangalore precision 0.347 breaks the ~0.49 that every other model scores there, so the extra area is not simply unmapped buildings.",
+        "Recall by size is erratic — the 200-500 m2 band regressed (0.462 -> 0.231) while 0-50 m2 improved."
+      ]
+    },
     "path raise 15.pt": {
       "arch": "unet",
       "in_channels": 3,
@@ -304,7 +412,16 @@
           "precision": 0.701,
           "recall": 0.907,
           "baseline_shipped_iou_at_0.50": 0.7996,
-          "note": "Lower than the shipped model BY CONSTRUCTION: an envelope prediction over-covers Inria's footprint labels, which costs precision while recall holds. Not catastrophic forgetting."
+          "note": "Lower than the shipped model BY CONSTRUCTION: an envelope prediction over-covers Inria's footprint labels, which costs precision while recall holds. Not catastrophic forgetting.",
+          "superseded_by": "inria_official_val_at_0.50 — a 5-tile subset overstated the regression"
+        },
+        "inria_official_val_at_0.50": {
+          "iou": 0.6828,
+          "precision": 0.7524,
+          "recall": 0.8807,
+          "shipped_baseline_iou": 0.7712,
+          "measured": "2026-09-06",
+          "note": "Full 25-tile official val split. Still an envelope model scored against footprint labels — read the recall (0.881, essentially the shipped model's) rather than the IoU."
         },
         "bangalore_osm_recall": {
           "recall_at_0.40": 0.915,
@@ -355,7 +472,16 @@
           "iou": 0.6394,
           "precision": 0.6905,
           "recall": 0.8962,
-          "shipped_baseline_iou": 0.7996
+          "shipped_baseline_iou": 0.7996,
+          "superseded_by": "inria_official_val_at_0.50 — a 5-tile subset overstated the regression"
+        },
+        "inria_official_val_at_0.50": {
+          "iou": 0.6708,
+          "precision": 0.7477,
+          "recall": 0.867,
+          "shipped_baseline_iou": 0.7712,
+          "measured": "2026-09-06",
+          "note": "Full 25-tile official val split. The real cost of fine-tuning is ~0.10 pooled IoU, not the ~0.16 the 5-tile subset suggested."
         },
         "holdout_val_iou": 0.253
       },

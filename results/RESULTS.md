@@ -502,3 +502,171 @@ That is what `kaggle_joint/` is for, and it is only coherent now that both
 halves mean the same thing: Inria footprints plus the OSM-relabelled Indian
 tiles, in one training run, with the Indian tiles repeated 20x so 103 of them
 are ~22% of an epoch rather than 1.4%. Launched 2026-09-05.
+
+---
+
+## Collecting the three Kaggle runs, and why the default did not change (2026-09-06)
+
+Three jobs were launched on 2026-09-05. Two finished, one never could.
+
+| kernel | what it tested | outcome |
+|---|---|---|
+| `kaggle_joint/` | Inria + all 103 OSM-relabelled Indian tiles, repeated 20x | complete, 46 epochs |
+| `kaggle_inria_b0/` | the same model as shipped but `samples-per-tile` 96 instead of 48 | complete, 50 epochs |
+| `kaggle_inria_b3/` | EfficientNet-B3, `samples-per-tile` 28 | cancelled in epoch 0 |
+
+### Every model, measured the same two ways
+
+Comparing these needed a second harness. `scripts/eval_inria.py` says whether a
+model still works where it was trained; it says nothing about the place this
+project actually wants to serve. `scripts/eval_india_osm.py` is new and supplies
+the other half — one mosaic of the CV Raman Nagar block fetched **once** and
+reused for every model, so a difference between two rows is the model and not
+the imagery.
+
+It reproduces the 2026-09-05 ad-hoc figures exactly (shipped 0.254 / 0.491 /
+0.345 / 21,373 m²; OSM fine-tune 0.409 / 0.502 / 0.689 / 41,825 m²; joint v1
+pixel recall 0.460), which is the reason to trust the new rows below.
+
+| model | Inria pooled IoU @0.50 | Bangalore footprint recall | silent (<0.10) | area ÷ OSM |
+|---|---|---|---|---|
+| **shipped** (spt 48) | 0.7712 | 0.241 | 0.560 | 0.70× |
+| B0 control (spt 96) | **0.7843** | 0.191 | 0.716 | 0.45× |
+| joint v1 (16 Indian tiles) | 0.7661 | 0.369 | 0.546 | 1.28× |
+| joint v3 (103 Indian tiles) | 0.7662 | 0.390 | 0.560 | 1.28× |
+| OSM fine-tune | 0.6708 | **0.716** | **0.149** | 1.37× |
+| envelope fine-tune | 0.6828 | — | — | 1.59× |
+
+The envelope fine-tune's recall columns are left blank on purpose: it predicts
+building-cluster envelopes, so a "footprint recall" against OSM footprints is
+not the same measurement as everyone else's and putting it in the same column
+would invite exactly the comparison `label_semantics` exists to prevent.
+
+Inria is pooled IoU over the 25 official val tiles. Bangalore is 141 of 142
+OpenStreetMap ways at threshold 0.50 — **recall only**; the precision column is
+omitted on purpose, because it measures OpenStreetMap's incompleteness rather
+than any model (see the three-way comparison above).
+
+### Finding 1 — more Western data buys Inria and costs India
+
+Doubling `samples-per-tile` from 48 to 96 draws twice as many training windows
+from the same 155 Inria tiles. It is the cleanest experiment in the project:
+one variable, same architecture, same encoder, same schedule.
+
+| | shipped (spt 48) | control (spt 96) |
+|---|---|---|
+| Inria pooled IoU | 0.7712 | **0.7843** (+0.0131) |
+| Bangalore footprint recall | 0.241 | 0.191 |
+| silent fraction | 0.560 | **0.716** |
+| detected area ÷ OSM | 0.70× | 0.45× |
+
+More data from five Western cities produced a *more Western* model. It is the
+best Inria checkpoint the project has ever trained and it is the worst of the
+five in Bangalore, where it goes silent on 72% of buildings a human mapped.
+It is registered in `model/manifest.json` and is **not** the default.
+
+This is the sharpest available evidence that the general model cannot be grown
+into a global one with more Inria.
+
+### Finding 2 — joint training fixed forgetting, not the domain gap
+
+Joint training did exactly what it was designed to do. Fine-tuning on ~100
+narrow tiles costs about 0.10 pooled Inria IoU; joint training costs **0.005**.
+
+| | Inria pooled IoU | vs shipped |
+|---|---|---|
+| shipped | 0.7712 | — |
+| joint v3 | 0.7662 | **−0.0050** |
+| OSM fine-tune | 0.6708 | −0.1004 |
+
+But it recovered only about a third of the Indian gain that fine-tuning on the
+*same 103 tiles* achieves, and it left the failure mode untouched:
+
+| | shipped | joint v3 | OSM fine-tune |
+|---|---|---|---|
+| footprint recall | 0.241 | 0.390 | **0.716** |
+| silent fraction | 0.560 | 0.560 | **0.149** |
+| Bangalore IoU | 0.254 | 0.242 | **0.409** |
+
+The silent fraction is the tell. Joint v3 raised recall **without reducing
+silence at all** — it did not make the model see more buildings, it made it
+paint more area around the ones it already saw. Its Bangalore IoU did not
+improve, its detected area rose to 1.28× the OSM reference, and its Bangalore
+precision fell to 0.347 where every other model scores ~0.49. Recall by size is
+incoherent with a real improvement: 0–50 m² rose (0.083 → 0.500) while the
+200–500 m² band *regressed* (0.462 → 0.231).
+
+### Finding 3 — how big a difference has to be before it means anything
+
+There are two joint checkpoints, `joint_effb0_20260905.pt` and
+`joint_v3_effb0_20260906.pt`. They are different files with different weights.
+**They are also, as far as anything in this repo can show, two executions of the
+same configuration** — the committed training log and the one downloaded on
+2026-09-06 have the same epoch size (~594 steps, 367 s/epoch), the same training
+loss to four decimals at every epoch, the same 46 epochs, and `best_val_iou`
+differing by 7e-6 (0.7174775 vs 0.7174843).
+
+That got checked because this section was going to claim something else. The
+handoff notes record that an early joint run trained on only 16 of the 103
+Indian tiles, because Kaggle mounted the dataset while it was still processing —
+a real incident, and the reason `kaggle_joint/` now asserts the tile count. The
+tempting story was "16 tiles vs 103 tiles changed nothing". **The artifacts do
+not support it.** No 16-tile training log survives here; the one committed
+alongside the fix is a full-data run, and which run produced
+`joint_effb0_20260905.pt` can no longer be established.
+
+So read the pair as what it defensibly is — a **repeat-run noise estimate** for
+these two harnesses, which is worth more than the claim it replaced:
+
+| | run A | run B | spread |
+|---|---|---|---|
+| Inria pooled IoU | 0.7661 | 0.7662 | 0.0001 |
+| Bangalore pixel recall | 0.460 | 0.443 | 0.017 |
+| footprint recall | 0.369 | 0.390 | 0.021 |
+| silent fraction | 0.546 | 0.560 | 0.014 |
+| area / OSM | 1.284 | 1.276 | 0.008 |
+
+**Inria is reproducible to ~0.0001; the Bangalore numbers wobble by ~0.02.**
+That is the bar. Joint's gain over the shipped model (footprint recall
+0.241 -> 0.390) is roughly seven times the noise and is real. A difference of
+0.02 between two Indian numbers is not interpretable, and one run is not
+evidence of a small effect.
+
+The open question stands where it did: joint training under-learns the Indian
+half, and the `--extra-repeat 20` weighting that makes 103 tiles ~22% of an
+epoch is the untested variable. Change the weighting or stage the training, and
+judge it against a bar of 0.02.
+
+### The decision: the default does not change
+
+`unetpp_effb0_inria_20260903.pt` stays `"default": true`.
+
+* The **B0 control** is better on Inria and worse everywhere this project wants
+  to go. Promoting it would improve the headline number and degrade the product.
+* **Joint v3** is the most interesting result and still not promotable. It buys
+  0.149 of footprint recall for an 82% increase in detected area that cannot be
+  verified — OpenStreetMap's incompleteness means "more area" and "more correct
+  area" are indistinguishable here — in an app that multiplies area into money.
+  Its unchanged silent fraction says the extra area is not new buildings.
+* **`finetune_osm`** remains the right choice for India and stays opt-in behind
+  `RSOLAR_MODEL=finetune_osm`.
+
+### A correction to an earlier number
+
+The "fine-tuning costs ~0.16 Inria IoU" figure came from a **5-tile** subset.
+Measured on the full 25-tile official val split it is **0.10** (0.7712 →
+0.6708). The conclusion is unchanged and the magnitude is smaller; the 5-tile
+subset should not be used again now that the full split is cheap to run.
+
+### Why B3 never produced a number
+
+`kaggle_inria_b3` was cancelled during its first epoch, and it could not have
+finished anyway. Its `status.json` records `amp: false` — it *did* pass
+`--amp fp16`, but `utils.select_amp` NaN-probes whatever it is asked for and
+EfficientNet-B3 failed the probe on the P100, so it fell back to fp32. At the
+recorded 8.86 images/s over 1240 batches of 8, one epoch is ~18.7 minutes and
+50 epochs is **~15.5 h** against Kaggle's 12 h limit.
+
+An explicit `--amp` request selects the *candidate list*; it does not skip the
+safety probe. On hardware where the probe fails, an explicit request is not a
+guarantee, and the run silently becomes twice as slow as it was budgeted for.
