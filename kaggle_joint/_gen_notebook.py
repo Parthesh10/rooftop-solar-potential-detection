@@ -126,18 +126,39 @@ print("Inria at", INRIA, "-", n_train, "train tiles")
 
 # The Indian tiles: images/ + labels/ pairs, uploaded as a Kaggle dataset
 # because data/ is gitignored in the repo.
+# How many tiles the dataset is supposed to contain. The first joint run
+# trained on 16 of them instead of all of them and said nothing: the kernel was
+# pushed ~2 minutes after the dataset was created, so Kaggle was still
+# processing the upload and mounted a partial copy. The India half of the run
+# was therefore ~5% of an epoch instead of ~22%, and the only visible symptom
+# was a muted result. Assert the count rather than trust the mount.
+EXPECTED_EXTRA_TILES = 103
+
 EXTRA = None
-for base in Path("/kaggle/input").glob("**/images"):
+best_n = 0
+for base in sorted(Path("/kaggle/input").glob("**/images")):
     labels = base.parent / "labels"
-    if labels.is_dir() and list(base.glob("*.png")) and "AerialImage" not in str(base):
-        EXTRA = base.parent
-        break
+    if not labels.is_dir() or "AerialImage" in str(base):
+        continue
+    n = len(list(base.glob("*.png")))
+    # Take the richest match, not the first: glob order is not meaningful and a
+    # partial or stray directory must not win by being earlier.
+    if n > best_n:
+        EXTRA, best_n = base.parent, n
 if EXTRA is None:
     raise SystemExit(
         "Indian tiles not mounted. Add partheshgupta/rooftop-solar-indian-osm-tiles in the Data panel or "
         "in dataset_sources.")
-print("Indian tiles at", EXTRA, "-",
-      len(list((EXTRA / "images").glob("*.png"))), "tiles")""".replace(
+
+n_lbl = len(list((EXTRA / "labels").glob("*_label.png")))
+print("Indian tiles at", EXTRA, "-", best_n, "images,", n_lbl, "labels")
+if best_n < EXPECTED_EXTRA_TILES or n_lbl < EXPECTED_EXTRA_TILES:
+    raise SystemExit(
+        "Only " + str(best_n) + " images / " + str(n_lbl) + " labels mounted, "
+        "expected " + str(EXPECTED_EXTRA_TILES) + ". The dataset is probably "
+        "still processing - wait for it to finish on the dataset page, then "
+        "re-push. Training on a partial mount silently under-weights the new "
+        "region, which is exactly the failure this check exists to catch.")""".replace(
     "__REPO_URL__", REPO_URL).replace("__INRIA_SLUG__", INRIA_SLUG)
 
 
