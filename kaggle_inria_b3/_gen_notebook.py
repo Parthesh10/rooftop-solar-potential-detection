@@ -140,7 +140,7 @@ DP = ["--data-parallel"] if N_GPU > 1 else []
 
 SWEEP = [
     ("V1_unetpp_effb3", ["--arch", "unet++", "--encoder", "efficientnet-b3",
-                       "--samples-per-tile", "64", "--epochs", "50"],
+                       "--samples-per-tile", "28", "--epochs", "50"],
      "U-Net++ + EfficientNet-B3 - 2x the capacity of the shipped model"),
 ]
 
@@ -150,7 +150,7 @@ BASE = [sys.executable, "-u", "scripts/train_inria.py",
         "--window", "512", "--val-stride", "512",
         "--pos-weight", "2.4", "--dice-weight", "0.6",
         "--batch-size", "8", "--lr", "3e-4",
-        "--workers", "2", "--patience", "12", "--amp", "auto",
+        "--workers", "2", "--patience", "12", "--amp", "fp16",
         "--gpu-util-target", "100", "--gpu-temp-limit", "0",
         "--gpu-mem-fraction", "0.95", "--checkpoint-every", "300",
         "--no-progress"] + DP

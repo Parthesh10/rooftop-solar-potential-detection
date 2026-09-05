@@ -150,7 +150,7 @@ BASE = [sys.executable, "-u", "scripts/train_inria.py",
         "--window", "512", "--val-stride", "512",
         "--pos-weight", "2.4", "--dice-weight", "0.6",
         "--batch-size", "16", "--lr", "3e-4",
-        "--workers", "2", "--patience", "12", "--amp", "auto",
+        "--workers", "2", "--patience", "12", "--amp", "fp16",
         "--gpu-util-target", "100", "--gpu-temp-limit", "0",
         "--gpu-mem-fraction", "0.95", "--checkpoint-every", "300",
         "--no-progress"] + DP

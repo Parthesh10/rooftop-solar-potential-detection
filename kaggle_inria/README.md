@@ -85,3 +85,24 @@ python -m kaggle kernels push -p kaggle_inria_b0 --accelerator gpuT4x2
 
 Kaggle runs a limited number of GPU sessions at once; a third push queues
 rather than failing.
+
+### Sizing for a P100, measured rather than assumed (2026-09-05)
+
+Both split kernels were also handed P100s. Two consequences, from real numbers
+rather than estimates:
+
+**AMP is off by default on this card.** `utils.select_amp` disables AMP on
+anything without tensor cores, and a P100 is sm_60. That rule was written for a
+GTX 1650, where emulated bf16 measured 2.6x slower than fp32 — but a P100 has
+*native packed fp16* (~2:1 throughput) even though it has no tensor cores, so
+the rule is too conservative here. Both kernels now pass `--amp fp16`
+explicitly, which still NaN-probes against the real model and falls back to
+fp32 if the probe fails.
+
+**EfficientNet-B3 at 64 samples/tile does not fit a 12 h session.** From the
+joint run's measured 0.757 s/step for B0 at batch 16, B3 at batch 8 works out
+to ~1.04 s/step; 1240 steps/epoch x 50 epochs is ~18 h. Samples per tile drops
+64 -> 28, which keeps all 50 epochs and brings the run to ~6 h. Note when
+reading the result that B3 therefore sees fewer windows per epoch than round
+1's B0 did (28 vs 48) — if B3 wins, it wins on less data, which strengthens the
+capacity argument; if it loses, that is confounded and not conclusive.
