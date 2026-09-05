@@ -1,0 +1,18 @@
+{
+  "id": "partheshgupta/rooftop-solar-inria-b3",
+  "title": "Rooftop Solar Inria B3",
+  "code_file": "kaggle_inria_b3_train.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_tpu": false,
+  "enable_internet": true,
+  "dataset_sources": [
+    "sagar100rathod/inria-aerial-image-labeling-dataset"
+  ],
+  "competition_sources": [],
+  "kernel_sources": [],
+  "model_sources": [],
+  "machine_shape": "gpuT4x2"
+}

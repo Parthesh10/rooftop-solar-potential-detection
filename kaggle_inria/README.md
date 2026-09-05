@@ -52,3 +52,36 @@ want something else.
 
 Inria official val IoU **≥ 0.72** (`plan.md` §4.3). Published building-seg work
 sits ~0.78–0.82.
+
+## Round 2 was split in two (2026-09-05)
+
+The original round 2 ran **13 h and was cancelled** at the 12 h session limit.
+Two causes, both only visible after the fact:
+
+1. **Kaggle handed out a single P100, not the 2x T4 the push requested.**
+   `--accelerator gpuT4x2` is a preference, not a guarantee. Half the compute,
+   and the ~9.6 h estimate for two configs became ~13 h.
+2. **Memory headroom was thinner than assumed.** The joint run peaked at
+   **14.7 GB of 16 GB** with EfficientNet-B0 at batch 16 on that P100.
+   EfficientNet-B3 at the same batch would not have fit.
+
+So round 2 now lives in two kernels, each with a full 12 h session and its
+epoch count untouched:
+
+| kernel | encoder | samples/tile | batch | est. on one P100 |
+|---|---|---|---|---|
+| `kaggle_inria_b3/` | efficientnet-b3 | 64 | 8 | ~8.6 h |
+| `kaggle_inria_b0/` | efficientnet-b0 | 96 | 16 | ~9.8 h |
+
+Batch sizes are chosen to fit **one** 16 GB card rather than assuming the work
+is split across two, and `--data-parallel` is now added only when
+`torch.cuda.device_count() > 1`.
+
+```powershell
+git push origin main
+python -m kaggle kernels push -p kaggle_inria_b3 --accelerator gpuT4x2
+python -m kaggle kernels push -p kaggle_inria_b0 --accelerator gpuT4x2
+```
+
+Kaggle runs a limited number of GPU sessions at once; a third push queues
+rather than failing.
