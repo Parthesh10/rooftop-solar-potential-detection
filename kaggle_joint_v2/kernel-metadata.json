@@ -1,0 +1,19 @@
+{
+  "id": "partheshgupta/rooftop-solar-joint-v2",
+  "title": "Rooftop Solar Joint V2",
+  "code_file": "kaggle_joint_v2_train.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_tpu": false,
+  "enable_internet": true,
+  "dataset_sources": [
+    "sagar100rathod/inria-aerial-image-labeling-dataset",
+    "partheshgupta/rooftop-solar-india-wide-tiles"
+  ],
+  "competition_sources": [],
+  "kernel_sources": [],
+  "model_sources": [],
+  "machine_shape": "gpuT4x2"
+}
