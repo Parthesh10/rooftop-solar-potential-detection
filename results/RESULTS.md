@@ -675,3 +675,22 @@ recorded 8.86 images/s over 1240 batches of 8, one epoch is ~18.7 minutes and
 An explicit `--amp` request selects the *candidate list*; it does not skip the
 safety probe. On hardware where the probe fails, an explicit request is not a
 guarantee, and the run silently becomes twice as slow as it was budgeted for.
+
+### Published
+
+Both checkpoints are on GitHub as
+[`v1.1-round2`](https://github.com/Parthesh10/rooftop-solar-potential-detection/releases/tag/v1.1-round2)
+(2026-09-06), each as `.pt`, `.onnx` and sidecar. The shipped model and the two
+fine-tunes remain on `v1.0-inria`.
+
+```bash
+gh release download v1.1-round2 --dir webapp/models
+RSOLAR_MODEL=joint_v3_effb0_20260906 python -m webapp
+```
+
+Both sidecars carry `"default": false`. Exporting them into `webapp/models/`
+alongside the shipped model was the first real test of the fix for the
+"newest .onnx wins" trap, and it held: with two *newer* `.onnx` files present,
+`load_model()` still returns `unetpp_effb0_inria_20260903` because selection
+reads the `default` flag before falling back to mtime. Under the old rule this
+release would have silently swapped every user's model.
