@@ -1,0 +1,67 @@
+{
+  "name": "unetpp_effb0_inria_spt96_20260906",
+  "onnx": "unetpp_effb0_inria_spt96_20260906.onnx",
+  "source_checkpoint": "unetpp_effb0_inria_spt96_20260906.pt",
+  "arch": "unet++",
+  "encoder": "efficientnet-b0",
+  "in_channels": 3,
+  "out_channels": 1,
+  "window": 512,
+  "stride": 256,
+  "threshold": 0.5,
+  "tta": false,
+  "stats_key": "imagenet",
+  "mean": [
+    0.485,
+    0.456,
+    0.406
+  ],
+  "std": [
+    0.229,
+    0.224,
+    0.225
+  ],
+  "output": "logits",
+  "gsd_m_per_px": 0.3,
+  "serving_zoom": 19,
+  "label_semantics": "building-footprint",
+  "recommended_packing_factor": null,
+  "default": false,
+  "trained_on": "inria-official",
+  "metrics": {
+    "harness": "scripts/eval_inria.py (pooled IoU, 25 official val tiles) and scripts/eval_india_osm.py (CV Raman Nagar, Bangalore, 142 OSM footprints)",
+    "measured": "2026-09-06",
+    "val": {
+      "iou": 0.7843,
+      "f1": 0.8791,
+      "precision": 0.8598,
+      "recall": 0.8993,
+      "threshold": 0.5,
+      "tta": false,
+      "shipped_baseline_iou": 0.7712
+    },
+    "val_best_threshold": {
+      "iou": 0.7852,
+      "threshold": 0.6
+    },
+    "_per_window_mean": {
+      "iou": 0.7342,
+      "note": "what the training loop printed; the shipped model's comparable figure is 0.7233"
+    },
+    "bangalore_vs_osm_at_0.50": {
+      "iou": 0.202,
+      "precision": 0.5425,
+      "pixel_recall": 0.2435,
+      "footprint_recall": 0.191,
+      "silent_fraction": 0.716,
+      "predicted_area_ratio_vs_osm": 0.449,
+      "shipped_baseline_footprint_recall": 0.241,
+      "shipped_baseline_silent_fraction": 0.56
+    }
+  },
+  "limitations": [
+    "Regresses Indian recall relative to the shipped model \u2014 the opposite of the project's stated priority.",
+    "Trained on the same five Western cities; more data from them, not more places."
+  ],
+  "opset": 17
+}

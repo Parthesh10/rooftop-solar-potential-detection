@@ -1,0 +1,66 @@
+{
+  "name": "joint_v3_effb0_20260906",
+  "onnx": "joint_v3_effb0_20260906.onnx",
+  "source_checkpoint": "joint_v3_effb0_20260906.pt",
+  "arch": "unet++",
+  "encoder": "efficientnet-b0",
+  "in_channels": 3,
+  "out_channels": 1,
+  "window": 512,
+  "stride": 256,
+  "threshold": 0.5,
+  "tta": false,
+  "stats_key": "imagenet",
+  "mean": [
+    0.485,
+    0.456,
+    0.406
+  ],
+  "std": [
+    0.229,
+    0.224,
+    0.225
+  ],
+  "output": "logits",
+  "gsd_m_per_px": 0.3,
+  "serving_zoom": 19,
+  "label_semantics": "building-footprint",
+  "recommended_packing_factor": 0.7,
+  "default": false,
+  "trained_on": "inria-official + indian-tiles-osm-relabelled",
+  "metrics": {
+    "harness": "scripts/eval_inria.py (pooled IoU, 25 official val tiles) and scripts/eval_india_osm.py (CV Raman Nagar, Bangalore, 142 OSM footprints)",
+    "measured": "2026-09-06",
+    "val": {
+      "iou": 0.7662,
+      "f1": 0.8676,
+      "precision": 0.8455,
+      "recall": 0.891,
+      "threshold": 0.5,
+      "tta": false,
+      "shipped_baseline_iou": 0.7712
+    },
+    "_per_window_mean": {
+      "iou": 0.7175
+    },
+    "bangalore_vs_osm_at_0.50": {
+      "iou": 0.2417,
+      "precision": 0.3473,
+      "pixel_recall": 0.4431,
+      "footprint_recall": 0.39,
+      "silent_fraction": 0.56,
+      "predicted_area_ratio_vs_osm": 1.276,
+      "shipped_baseline_footprint_recall": 0.241,
+      "finetune_osm_footprint_recall": 0.716
+    },
+    "repeat_run_noise": {
+      "note": "joint_effb0_20260905.pt and this checkpoint are, as far as the surviving artifacts show, two executions of the SAME configuration \u2014 identical epoch size and training loss to four decimals over 46 epochs, best_val_iou differing by 7e-6. Treat the pair as a noise estimate, not a comparison: Inria reproduces to ~0.0001 while the Bangalore figures move ~0.02 (pixel recall 0.460 vs 0.443, footprint recall 0.369 vs 0.390, silent 0.546 vs 0.560). An Indian difference under 0.02 from one run means nothing. A claim that one of them trained on 16 tiles rather than 103 could NOT be substantiated \u2014 no such training log survives in the repo."
+    }
+  },
+  "limitations": [
+    "Detects 1.28x the OpenStreetMap reference area in Bangalore, and OSM's incompleteness means that cannot be verified as correct.",
+    "Bangalore precision 0.347 breaks the ~0.49 that every other model scores there, so the extra area is not simply unmapped buildings.",
+    "Recall by size is erratic \u2014 the 200-500 m2 band regressed (0.462 -> 0.231) while 0-50 m2 improved."
+  ],
+  "opset": 17
+}
