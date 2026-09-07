@@ -92,6 +92,53 @@ INDIA_AOIS: dict[str, tuple[float, float, float, float]] = {
     "pune_kothrud":      (73.810, 18.501, 73.820, 18.509),
 }
 
+# Round 2, added 2026-09-07 after the ten-city model was promoted.
+#
+# Fact 36 is why this exists: going from two Indian cities to ten moved held-out
+# recall in six of six new cities (Chennai 0.302 -> 0.872, Pune 0.202 -> 0.839)
+# and cost 0.0022 Inria IoU. The trade everyone feared is barely measurable, so
+# the thing to do is push breadth much further rather than tune the weighting.
+#
+# Two groups, for two different reasons:
+#
+# * **Indian tier-2 cities.** The eight metros above share a built form. The
+#   weakest held-out scores were Ahmedabad (0.414) and Jaipur (0.353), which are
+#   also the least metro-like of the set — a hint that the model has learned
+#   "Indian metro" rather than "Indian". Smaller cities test that directly.
+# * **Three new continents.** Open Buildings covers Africa, South and Southeast
+#   Asia and Latin America, and the project's stated scope is a model that
+#   detects a roof *anywhere*. None of this imagery has ever been in training.
+#
+# NOTE: unlike every AOI above, these include southern latitudes and western
+# longitudes. Anything that assumed positive coordinates will surface here —
+# which is how the --bounds argparse bug in scripts/eval_india_osm.py was found.
+WORLD_AOIS: dict[str, tuple[float, float, float, float]] = {
+    # --- India, tier-2: different density, roof material and plot size ---
+    "lucknow_gomtinagar":   (80.995, 26.855, 81.005, 26.863),
+    "nagpur_dharampeth":    (79.060, 21.135, 79.070, 21.143),
+    "surat_adajan":         (72.780, 21.185, 72.790, 21.193),
+    "indore_vijaynagar":    (75.890, 22.750, 75.900, 22.758),
+    "patna_kankarbagh":     (85.150, 25.590, 85.160, 25.598),
+    "coimbatore_rspuram":   (76.960, 11.010, 76.970, 11.018),
+    "vizag_mvpcolony":      (83.320, 17.740, 83.330, 17.748),
+    "bhubaneswar_saheed":   (85.820, 20.290, 85.830, 20.298),
+    # --- Africa ---
+    "lagos_surulere":       (3.350, 6.495, 3.360, 6.503),
+    "nairobi_umoja":        (36.885, -1.283, 36.895, -1.275),
+    "accra_osu":            (-0.190, 5.560, -0.180, 5.568),
+    "addis_bole":           (38.780, 8.990, 38.790, 8.998),
+    # --- Southeast and South Asia beyond India ---
+    "dhaka_mirpur":         (90.365, 23.800, 90.375, 23.808),
+    "jakarta_tebet":        (106.850, -6.235, 106.860, -6.227),
+    "manila_sampaloc":      (120.995, 14.605, 121.005, 14.613),
+    # --- Latin America ---
+    "saopaulo_tatuape":     (-46.575, -23.545, -46.565, -23.537),
+    "lima_sanjuan":         (-76.970, -12.160, -76.960, -12.152),
+}
+
+ALL_AOIS: dict[str, tuple[float, float, float, float]] = {
+    **INDIA_AOIS, **WORLD_AOIS}
+
 
 def precision_thresholds(cache: Path | None = None) -> list[dict]:
     """Google's per-cell confidence thresholds, with the cell's lon/lat bbox."""
@@ -242,7 +289,7 @@ def main() -> None:
                         "in build_india_labels.py, so keep everything here")
     args = ap.parse_args()
 
-    aois = dict(INDIA_AOIS)
+    aois = dict(ALL_AOIS)
     if args.aoi:
         missing = [a for a in args.aoi if a not in aois]
         if missing:
