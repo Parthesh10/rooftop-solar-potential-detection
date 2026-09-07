@@ -146,8 +146,15 @@ def main() -> None:
     ap.add_argument("--arch", default=None, help="override the manifest arch")
     ap.add_argument("--encoder", default=None)
     ap.add_argument("--stats-key", default=None)
+    # NOTE: a western-hemisphere box starts with a minus sign, and argparse
+    # reads "-97.745,..." as a flag rather than a value. Passing it as
+    # --bounds=-97.745,... works, but so does accepting a leading space, and
+    # only one of those is discoverable from --help.
     ap.add_argument("--bounds", default=None,
-                    help="west,south,east,north (default: CV Raman Nagar block)")
+                    help="west,south,east,north (default: CV Raman Nagar "
+                         "block). Negative longitudes are fine: either use "
+                         "--bounds=-97.7,30.2,-97.6,30.3 or quote it with a "
+                         "leading space, ' -97.7,30.2,...'")
     ap.add_argument("--zoom", type=int, default=19)
     ap.add_argument("--threshold", type=float, default=0.50)
     ap.add_argument("--window", type=int, default=512)
@@ -155,10 +162,19 @@ def main() -> None:
     ap.add_argument("--out", default=None, help="write results as JSON here")
     args = ap.parse_args()
 
-    bounds = (tuple(float(v) for v in args.bounds.split(","))
+    # .strip() so a leading space — the usual way to smuggle a negative
+    # longitude past argparse — does not become a float() error.
+    bounds = (tuple(float(v) for v in args.bounds.strip().split(","))
               if args.bounds else DEFAULT_BOUNDS)
     if len(bounds) != 4:
         raise SystemExit("--bounds needs west,south,east,north")
+    if not (-180 <= bounds[0] < bounds[2] <= 180
+            and -90 <= bounds[1] < bounds[3] <= 90):
+        raise SystemExit(
+            f"--bounds {bounds} is not west,south,east,north with west<east "
+            f"and south<north. A western-hemisphere box needs "
+            f"--bounds=-97.7,30.2,-97.6,30.3 (the '=' keeps argparse from "
+            f"reading the minus sign as a flag).")
 
     grid, mosaic, rings = asyncio.run(
         fetch_inputs(bounds, args.zoom, args.provider))

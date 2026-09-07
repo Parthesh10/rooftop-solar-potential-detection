@@ -124,3 +124,35 @@ def test_rasterise_rings_empty_input():
     grid = tile_grid_for_bounds(77.654, 12.984, 77.658, 12.987, 19)
     shape = (grid.height_px, grid.width_px)
     assert not rasterise_rings([], grid, shape).any()
+
+
+# --------------------------------------------------------------------------- #
+# --bounds parsing. A western-hemisphere box starts with a minus sign, which
+# argparse reads as a flag — so the whole Americas half of the world failed
+# with "expected one argument" until --bounds=... or a leading space was used.
+# --------------------------------------------------------------------------- #
+
+def _parse_bounds(raw: str) -> tuple[float, ...]:
+    """Mirror of main()'s parsing, which is not separately importable."""
+    return tuple(float(v) for v in raw.strip().split(","))
+
+
+def test_bounds_parse_accepts_leading_space_for_negative_longitude():
+    """' -97.7,30.2,-97.6,30.3' is how you smuggle a minus past argparse."""
+    assert _parse_bounds(" -97.7450,30.2650,-97.7400,30.2690") == (
+        -97.745, 30.265, -97.74, 30.269)
+
+
+def test_bounds_parse_handles_western_hemisphere():
+    w, s, e, n = _parse_bounds("-97.7450,30.2650,-97.7400,30.2690")
+    assert w < e and s < n
+    assert w < 0 and e < 0
+
+
+def test_tile_grid_works_across_the_antimeridian_side():
+    """A negative-longitude AOI must still produce a sane grid."""
+    grid = tile_grid_for_bounds(-97.745, 30.265, -97.740, 30.269, 19)
+    assert grid.n_tiles > 0
+    lon, lat = grid.pixel_to_lonlat(0, 0)
+    assert -98 < lon < -97
+    assert 30 < lat < 31
