@@ -58,14 +58,20 @@ def main() -> None:
     if not imgs:
         raise SystemExit(f"no tiles in {root / 'images'}")
 
+    random.seed(args.seed)
     if args.per_aoi:
-        seen: dict[str, Path] = {}
+        # A RANDOM tile per AOI, not the first one. `imgs` is sorted, so taking
+        # the first match per AOI returns tile 0000 every time — the mosaic's
+        # top-left corner, which is systematically its least built-up patch.
+        # That is not hypothetical: it is exactly how a healthy dataset was
+        # once made to look broken (median positive coverage 0.311, corner tiles
+        # 0.05). The whole point of this preview is to catch a georeferencing
+        # slip that statistics cannot see, and a biased sample cannot do that.
+        by_aoi: dict[str, list[Path]] = {}
         for p in imgs:
-            aoi = p.stem.rsplit("_", 1)[0]
-            seen.setdefault(aoi, p)
-        picks = list(seen.values())[:args.cols * args.rows]
+            by_aoi.setdefault(p.stem.rsplit("_", 1)[0], []).append(p)
+        picks = [random.choice(v) for v in by_aoi.values()][:args.cols * args.rows]
     else:
-        random.seed(args.seed)
         picks = random.sample(imgs, min(len(imgs), args.cols * args.rows))
 
     cell = args.cell
