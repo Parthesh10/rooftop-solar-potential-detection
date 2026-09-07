@@ -39,6 +39,7 @@ buildings.
 from __future__ import annotations
 
 import argparse
+import collections
 import gzip
 import json
 import sys
@@ -319,20 +320,9 @@ def main() -> None:
         print(f"  {name:22s} positive at confidence >= {thr:.3f}")
     print()
 
-    collected: dict[str, list] = {name: [] for name in aois}
-    for tok, wanted in sorted(by_token.items()):
-        print(f"shard {tok}  ({', '.join(n for n, _ in wanted)})", flush=True)
-        try:
-            for name, conf, ring in stream_shard(tok, wanted, args.min_confidence):
-                collected[name].append({"confidence": round(conf, 4), "ring": ring})
-        except Exception as exc:
-            print(f"    FAILED: {type(exc).__name__}: {exc}", flush=True)
-
-    print("\nresults:")
-    for name, items in sorted(collected.items()):
-        path = out / f"{name}.json"
+    def write_aoi(name: str, items: list) -> None:
         thr = thresholds[name]
-        path.write_text(json.dumps({
+        (out / f"{name}.json").write_text(json.dumps({
             "aoi": name,
             "bounds": list(aois[name]),
             "source": "Google Open Buildings v3 (CC-BY-4.0 / ODbL)",
@@ -342,12 +332,40 @@ def main() -> None:
                 f"this AOI. Below it, treat as ignore rather than negative."),
             "buildings": items,
         }), encoding="utf-8")
-        confs = [b["confidence"] for b in items]
-        hi = sum(c >= thr for c in confs)
+        hi = sum(b["confidence"] >= thr for b in items)
         flag = "" if len(items) >= 200 else "   <-- suspiciously few, check the bbox"
-        print(f"  {name:22s} {len(items):6,} buildings  "
+        print(f"  wrote {name:22s} {len(items):6,} buildings  "
               f"({hi:,} positive at >={thr:.3f}, "
-              f"{len(items) - hi:,} ignore){flag}")
+              f"{len(items) - hi:,} ignore){flag}", flush=True)
+
+    # How many shards each AOI is still waiting on, so an AOI can be written the
+    # moment its last shard lands rather than at the end of the whole run.
+    # Worth the bookkeeping: these runs take hours, the shards are hundreds of
+    # MB each, and a run that writes only at the end loses everything if the
+    # process dies — which is exactly what happened on 2026-09-07, throwing away
+    # 13 minutes of streaming across four continents.
+    pending = collections.Counter()
+    for tok, wanted in by_token.items():
+        for name, _ in wanted:
+            pending[name] += 1
+
+    collected: dict[str, list] = {name: [] for name in aois}
+    for tok, wanted in sorted(by_token.items()):
+        print(f"shard {tok}  ({', '.join(n for n, _ in wanted)})", flush=True)
+        try:
+            for name, conf, ring in stream_shard(tok, wanted, args.min_confidence):
+                collected[name].append({"confidence": round(conf, 4), "ring": ring})
+        except Exception as exc:
+            print(f"    FAILED: {type(exc).__name__}: {exc}", flush=True)
+        for name, _ in wanted:
+            pending[name] -= 1
+            if pending[name] == 0:
+                write_aoi(name, collected.pop(name))
+
+    # Anything still held (an AOI whose every shard failed) still gets a file,
+    # so the empty result is visible rather than silently absent.
+    for name, items in sorted(collected.items()):
+        write_aoi(name, items)
 
     print(f"\nwrote {out}")
 
