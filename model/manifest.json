@@ -67,7 +67,8 @@
         "Untested on dense low-rise Indian, African or East-Asian rooftops.",
         "Expects ~0.3 m/px imagery; serve at Web Mercator z=19."
       ],
-      "default": true
+      "default": false,
+      "_default_history": "Shipped as the default from 2026-09-03 to 2026-09-07, when joint_v2_india10_20260907.pt superseded it. Kept registered because it is the cleanest pure-Inria reference and every published 0.7712 figure belongs to THIS model, not the current default."
     },
     "unetpp_effb0_inria_spt96_20260906.pt": {
       "arch": "unet++",
@@ -138,10 +139,10 @@
       "window": 512,
       "gsd_m_per_px": 0.3,
       "serving_zoom": 19,
-      "default": false,
+      "default": true,
       "label_semantics": "building-footprint",
       "recommended_packing_factor": 0.7,
-      "note": "Inria plus 505 Indian tiles from TEN cities (402 machine-labelled from Google Open Buildings across eight new cities, plus the 103 OSM-relabelled Bangalore/Bhopal tiles), repeated 8x for ~35% of each epoch. THE FIRST MODEL IN THIS PROJECT TO IMPROVE INDIA WITHOUT PAYING FOR IT ON INRIA: 0.7690 pooled against the shipped 0.7712, a 0.0022 cost that is inside measurement noise, while the silent fraction on held-out blocks falls from 0.744 to 0.080 (Delhi), 0.538 to 0.154 (Mumbai) and 0.379 to 0.081 (Chennai). Every earlier model bought one number at the other's expense - see facts 30 and 31.",
+      "note": "THE SHIPPED MODEL since 2026-09-07. Inria plus 505 Indian tiles from TEN cities (402 machine-labelled from Google Open Buildings across eight new cities, plus the 103 OSM-relabelled Bangalore/Bhopal tiles), repeated 8x for ~35% of each epoch. THE FIRST MODEL IN THIS PROJECT TO IMPROVE INDIA WITHOUT PAYING FOR IT ON INRIA: 0.7690 pooled against the shipped 0.7712, a 0.0022 cost that is inside measurement noise, while the silent fraction on held-out blocks falls from 0.744 to 0.080 (Delhi), 0.538 to 0.154 (Mumbai) and 0.379 to 0.081 (Chennai). Every earlier model bought one number at the other's expense - see facts 30 and 31.",
       "metrics_verified": {
         "harness": "scripts/eval_inria.py (pooled IoU, 25 official val tiles) and scripts/eval_india_osm.py on blocks disjoint from every training AOI",
         "measured": "2026-09-07",

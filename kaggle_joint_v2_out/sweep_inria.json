@@ -1,0 +1,41 @@
+[
+  {
+    "run": "J2_joint_india10",
+    "dataset": "inria-official",
+    "best_val_iou": 0.7219432700336654,
+    "best_epoch": 48,
+    "epochs_run": 50,
+    "model": {
+      "arch": "unet++",
+      "encoder": "efficientnet-b0",
+      "encoder_weights": "imagenet",
+      "in_channels": 3,
+      "out_channels": 1,
+      "bilinear": false,
+      "stats_key": "imagenet"
+    },
+    "config": {
+      "arch": "unet++",
+      "encoder": "efficientnet-b0",
+      "encoder_weights": "imagenet",
+      "stats_key": "imagenet",
+      "window": 512,
+      "samples_per_tile": 48,
+      "pos_weight": 2.4,
+      "dice_weight": 0.6,
+      "lr": 0.0003,
+      "batch_size": 16,
+      "epochs": 50,
+      "patience": 12
+    },
+    "metrics": {
+      "val": {
+        "iou": 0.7219432700336654,
+        "f1": 0.8166106003042806,
+        "accuracy": 0.9631786826804832,
+        "precision": 0.8239870930944627,
+        "recall": 0.8491275388773287
+      }
+    }
+  }
+]

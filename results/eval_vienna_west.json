@@ -1,0 +1,105 @@
+{
+  "bounds": [
+    16.37,
+    48.196,
+    16.375,
+    48.2
+  ],
+  "zoom": 19,
+  "provider": "esri",
+  "metres_per_px": 0.199,
+  "reference": "OpenStreetMap building ways (incomplete \u2014 recall only)",
+  "reference_buildings": 87,
+  "reference_area_m2": 47796,
+  "threshold": 0.5,
+  "models": [
+    {
+      "checkpoint": "unetpp_effb0_inria_20260903.pt",
+      "arch": "unet++",
+      "encoder": "efficientnet-b0",
+      "threshold": 0.5,
+      "iou": 0.4819,
+      "precision": 0.5016,
+      "recall": 0.9248,
+      "predicted_area_m2": 88122,
+      "area_ratio_vs_osm": 1.844,
+      "footprints_scored": 83,
+      "footprint_recall": 0.94,
+      "silent_fraction": 0.024,
+      "by_size": [
+        {
+          "from_m2": 0,
+          "to_m2": 50,
+          "n": 4,
+          "recall": 0.5,
+          "median_probability": 0.5417
+        },
+        {
+          "from_m2": 50,
+          "to_m2": 100,
+          "n": 3,
+          "recall": 0.667,
+          "median_probability": 0.9654
+        },
+        {
+          "from_m2": 200,
+          "to_m2": 500,
+          "n": 43,
+          "recall": 0.977,
+          "median_probability": 0.9847
+        },
+        {
+          "from_m2": 500,
+          "to_m2": null,
+          "n": 33,
+          "recall": 0.97,
+          "median_probability": 0.984
+        }
+      ]
+    },
+    {
+      "checkpoint": "joint_v2_india10_20260907.pt",
+      "arch": "unet++",
+      "encoder": "efficientnet-b0",
+      "threshold": 0.5,
+      "iou": 0.4863,
+      "precision": 0.5027,
+      "recall": 0.937,
+      "predicted_area_m2": 89082,
+      "area_ratio_vs_osm": 1.864,
+      "footprints_scored": 83,
+      "footprint_recall": 0.94,
+      "silent_fraction": 0.024,
+      "by_size": [
+        {
+          "from_m2": 0,
+          "to_m2": 50,
+          "n": 4,
+          "recall": 0.25,
+          "median_probability": 0.2821
+        },
+        {
+          "from_m2": 50,
+          "to_m2": 100,
+          "n": 3,
+          "recall": 1.0,
+          "median_probability": 0.9716
+        },
+        {
+          "from_m2": 200,
+          "to_m2": 500,
+          "n": 43,
+          "recall": 0.977,
+          "median_probability": 0.9919
+        },
+        {
+          "from_m2": 500,
+          "to_m2": null,
+          "n": 33,
+          "recall": 0.97,
+          "median_probability": 0.9916
+        }
+      ]
+    }
+  ]
+}

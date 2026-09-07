@@ -1,0 +1,82 @@
+{
+  "name": "joint_v2_india10_20260907",
+  "onnx": "joint_v2_india10_20260907.onnx",
+  "source_checkpoint": "joint_v2_india10_20260907.pt",
+  "arch": "unet++",
+  "encoder": "efficientnet-b0",
+  "in_channels": 3,
+  "out_channels": 1,
+  "window": 512,
+  "stride": 256,
+  "threshold": 0.5,
+  "tta": false,
+  "stats_key": "imagenet",
+  "mean": [
+    0.485,
+    0.456,
+    0.406
+  ],
+  "std": [
+    0.229,
+    0.224,
+    0.225
+  ],
+  "output": "logits",
+  "gsd_m_per_px": 0.3,
+  "serving_zoom": 19,
+  "label_semantics": "building-footprint",
+  "recommended_packing_factor": 0.7,
+  "default": true,
+  "trained_on": "inria-official + india-10-cities (Open Buildings + OSM)",
+  "metrics": {
+    "harness": "scripts/eval_inria.py (pooled IoU, 25 official val tiles) and scripts/eval_india_osm.py on blocks disjoint from every training AOI",
+    "measured": "2026-09-07",
+    "val": {
+      "iou": 0.769,
+      "f1": 0.8694,
+      "precision": 0.8477,
+      "recall": 0.8923,
+      "threshold": 0.5,
+      "tta": false,
+      "shipped_baseline_iou": 0.7712
+    },
+    "_per_window_mean": {
+      "iou": 0.7219,
+      "note": "shipped model's comparable figure is 0.7233"
+    },
+    "india_heldout_blocks_at_0.50": {
+      "_note": "Blocks disjoint from all training AOIs. OSM-anchored RECALL only - OSM is incomplete in India, so precision and IoU here measure the reference, not the model (fact 28).",
+      "delhi": {
+        "footprint_recall": 0.84,
+        "silent_fraction": 0.08,
+        "shipped_footprint_recall": 0.168,
+        "shipped_silent_fraction": 0.744
+      },
+      "mumbai": {
+        "footprint_recall": 0.769,
+        "silent_fraction": 0.154,
+        "shipped_footprint_recall": 0.346,
+        "shipped_silent_fraction": 0.538
+      },
+      "chennai": {
+        "footprint_recall": 0.872,
+        "silent_fraction": 0.081,
+        "iou": 0.2963,
+        "shipped_footprint_recall": 0.302,
+        "shipped_silent_fraction": 0.379,
+        "shipped_iou": 0.2014
+      }
+    },
+    "bangalore_cvraman_CONTAMINATED": {
+      "footprint_recall": 0.333,
+      "silent_fraction": 0.589,
+      "_warning": "NOT a held-out number. bangalore_cvraman_a fully contains the CV Raman Nagar benchmark block and all 30 of its tiles are in this model's training set, because train_inria.py --extra-data-dir holds nothing out. The same is true of joint_v3. Only finetune_osm (which used --holdout-aoi bangalore_cvraman_a) has a clean Bangalore number. Use the held-out city blocks above instead."
+    }
+  },
+  "limitations": [
+    "Merges adjacent roofs into single blobs in dense blocks, so building COUNT is less reliable than area.",
+    "Indian evaluation is OSM-anchored recall on machine-labelled training regions; no hand-drawn eval set exists for the eight new cities.",
+    "Predicts ~2x the detected area of the shipped model in India. Coverage analysis says that is more correct, not less (shipped predicts 11.5% of a dense Delhi block as roof against a realistic 40-60%), but it has not been verified against hand-drawn ground truth."
+  ],
+  "opset": 17
+}

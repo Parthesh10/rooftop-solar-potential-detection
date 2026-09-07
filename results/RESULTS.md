@@ -6,7 +6,13 @@ are the project's history and a secondary out-of-distribution check.
 
 ---
 
-# THE SHIPPED MODEL — Inria, 2026-09-03 (re-measured 2026-09-04)
+# THE INRIA-ONLY MODEL — 2026-09-03 (re-measured 2026-09-04)
+
+> **This was the shipped model from 2026-09-03 to 2026-09-07.** The default is
+> now `joint_v2_india10_20260907.pt` — see "The default changes: joint v2" at
+> the end of this file. Everything in this section still describes
+> `unetpp_effb0_inria_20260903.pt`, and **0.7712 is this model's number, not the
+> current default's** (which scores 0.7690). Quote it as such.
 
 **Inria official val IoU 0.7712** at the shipped threshold of 0.50, rising to
 **0.7809** with test-time augmentation. Target was ≥ 0.72. ✅
@@ -694,3 +700,113 @@ alongside the shipped model was the first real test of the fix for the
 `load_model()` still returns `unetpp_effb0_inria_20260903` because selection
 reads the `default` flag before falling back to mtime. Under the old rule this
 release would have silently swapped every user's model.
+
+---
+
+## The default changes: joint v2, ten Indian cities (2026-09-07)
+
+**`joint_v2_india10_20260907.pt` replaces `unetpp_effb0_inria_20260903.pt` as the
+shipped model.** It is the first model this project has produced that improves
+India without paying for it on Inria. Every previous attempt bought one at the
+other's expense — that trade is what facts 30 and 31 are about.
+
+### What changed in the training data
+
+`kaggle_joint_v2/`: Inria plus **505 Indian tiles from ten cities**, repeated 8×
+so India is ~35% of each epoch. The previous joint run had 103 tiles from two
+cities at ~22%. 402 of the new tiles were machine-labelled from Google Open
+Buildings across eight cities that had never appeared in training — Delhi,
+Mumbai, Chennai, Kolkata, Hyderabad, Jaipur, Ahmedabad, Pune — with no human
+labelling (fact 34).
+
+### The measurement that decided it, and the one that nearly misled
+
+The Bangalore block said the experiment had **failed**: footprint recall
+0.390 → 0.333, silent fraction 0.560 → 0.589 against joint v3. Two things were
+wrong with reading that as the answer.
+
+**First, the Bangalore number is contaminated for every joint model.**
+`bangalore_cvraman_a` fully contains the CV Raman Nagar benchmark block, all 30
+of its tiles are in the joint training set, and `train_inria.py
+--extra-data-dir` holds *nothing* back — validation is Inria-only. Both joint v3
+and joint v2 trained on the block they were scored on. Only `finetune_osm`, which
+used `--holdout-aoi bangalore_cvraman_a`, has ever had a clean Bangalore figure.
+
+**Second, and more important: Bangalore could not see the experiment.** v2's
+whole thesis was geographic breadth, and Bangalore tiles were already in v3's
+training set. The 402 new tiles taught the model eight cities the Bangalore
+benchmark says nothing about. **Measuring a breadth experiment at a single point
+can only show its cost, never its benefit.**
+
+### Held-out blocks in six of the new cities
+
+Each block is disjoint from every training AOI. OSM-anchored **recall only** —
+OSM is incomplete in India, so precision and IoU there measure the reference
+(fact 28).
+
+| city | OSM refs | shipped recall / silent | **joint v2 recall / silent** |
+|---|---|---|---|
+| Chennai | 242 | 0.302 / 0.379 | **0.872 / 0.081** |
+| Pune | 197 | 0.202 / 0.596 | **0.839 / 0.083** |
+| Delhi | 130 | 0.168 / 0.744 | **0.840 / 0.080** |
+| Ahmedabad | 38 | 0.103 / 0.793 | **0.414 / 0.517** |
+| Mumbai | 30 | 0.346 / 0.538 | **0.769 / 0.154** |
+| Jaipur | 18 | 0.059 / 0.706 | **0.353 / 0.294** |
+
+Six of six, every one far outside the 0.02 noise floor. Kolkata and Hyderabad
+are **unmeasured** — Overpass rate-limited those two blocks on three attempts.
+
+Pune is the single most convincing row: IoU 0.163 → **0.493** and precision
+0.553 → **0.593**. When precision and recall rise together against the same
+reference, the reference's incompleteness cannot be the explanation.
+
+### The over-painting question, settled in the West
+
+v2 predicts 2.2× the OSM area in Chennai and 6.3× in Delhi. That looks alarming
+and it is why joint v3 was not promoted. But OSM claims only **7.3%** of the
+Delhi block is roof, where dense Indian urban is realistically 40–60%; converted
+to physical coverage, v2 says 46% and the shipped model says 11.5%.
+
+The way to settle it is to measure somewhere OSM is complete:
+
+| block | model | IoU | precision | recall | area ÷ OSM |
+|---|---|---|---|---|---|
+| **Austin** | shipped | 0.814 | 0.898 | 0.943 | **1.00×** |
+| | **joint v2** | 0.797 | 0.896 | 0.962 | **0.98×** |
+| **Vienna** | shipped | 0.482 | 0.502 | 0.940 | 1.84× |
+| | **joint v2** | 0.486 | 0.503 | 0.940 | 1.86× |
+
+In Austin, where the shipped model reproduces OSM's area to 1.00×, **v2 predicts
+0.98× at the same precision**. It is not an over-painting model. The Indian
+ratios are OpenStreetMap's incompleteness — argued before, proven here.
+
+### The cost
+
+| | shipped | joint v2 |
+|---|---|---|
+| Inria pooled IoU @0.50 | 0.7712 | **0.7690** |
+| per-window mean | 0.7233 | 0.7219 |
+
+**0.0022**, an order of magnitude inside the gap between the fine-tunes (0.10)
+and roughly the reproducibility of the metric itself.
+
+### What this does and does not change
+
+* **Indian area estimates roughly double.** The coverage analysis and the Austin
+  result both say that is more correct, not less, but it is a large change to
+  every kWh and money figure in those regions.
+* **Building count is less reliable than area** — v2 merges adjacent roofs into
+  blobs in dense blocks. Visible in `compare_chennai.png`.
+* **The regional threshold prior is now nearly vestigial.** `coverage.py` relaxes
+  to 0.40 outside the training cities because the old model was under-confident
+  there. For v2 that is worth +4% area in Chennai (2.24× → 2.33×) and no recall
+  worth mentioning — it is no longer silent, so there is nothing to relax. Left
+  in place; it is now a no-op rather than a fix.
+* **0.7712 still belongs to the old model.** Quote it as such, not as the current
+  default's score.
+
+### Still missing
+
+No hand-drawn evaluation set exists for any of the eight new cities. Everything
+above is OSM-anchored recall, which is honest but cannot give an IoU. That is
+the next thing worth a human's time.
