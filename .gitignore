@@ -43,3 +43,7 @@ kaggle_check/
 # Web app runtime artefacts
 webapp/.cache/
 kaggle_inria_out/
+
+# ramp benchmark tiles — 100 MB of CC-BY-NC imagery, re-fetch with
+# scripts/download_ramp.py (seeded, so the subset is reproducible)
+data/ramp/
