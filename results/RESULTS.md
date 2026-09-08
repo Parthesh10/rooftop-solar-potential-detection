@@ -9,10 +9,15 @@ are the project's history and a secondary out-of-distribution check.
 # THE INRIA-ONLY MODEL — 2026-09-03 (re-measured 2026-09-04)
 
 > **This was the shipped model from 2026-09-03 to 2026-09-07.** The default is
-> now `joint_v2_india10_20260907.pt` — see "The default changes: joint v2" at
-> the end of this file. Everything in this section still describes
-> `unetpp_effb0_inria_20260903.pt`, and **0.7712 is this model's number, not the
-> current default's** (which scores 0.7690). Quote it as such.
+> now `joint_v3_world25_20260908.pt` (25 areas on four continents) — see "Round
+> 3" and "The first real IoU outside Inria" at the end of this file. Everything
+> in this section still describes `unetpp_effb0_inria_20260903.pt`, and
+> **0.7712 is this model's number, not the current default's** (which scores
+> 0.7671). Quote it as such.
+>
+> For scale, on human-drawn rooftop labels in rural Karnataka this model scores
+> **IoU 0.150** against the current default's **0.579**, and recovers 17% of the
+> actual roof area against the default's 102%.
 
 **Inria official val IoU 0.7712** at the shipped threshold of 0.50, rising to
 **0.7809** with test-time augmentation. Target was ≥ 0.72. ✅
@@ -960,3 +965,84 @@ that change. All three shipped models pass with zero decision flips:
 | joint_v3 | 1.63e-03 | 1.10e-08 | 0 |
 | joint_v2 | 1.34e-04 | 5.60e-10 | 0 |
 | Inria-only | 5.91e-05 | 2.18e-09 | 0 |
+
+---
+
+## The first real IoU outside Inria: ramp Karnataka (2026-09-08)
+
+Every non-Inria number above this line is OSM-anchored **recall**, because
+OpenStreetMap is incomplete wherever this model is interesting. That is the
+honest metric for an incomplete reference, but it cannot produce a trustworthy
+IoU or precision, and after round 3 not one of the 25 training regions had any
+human-drawn ground truth at all.
+
+[**ramp**](https://source.coop/ramp/ramp) (Replicable AI for Microplanning,
+CC-BY-NC-4.0) closes that gap, and is a better fit than the obvious alternatives
+on three counts simultaneously:
+
+* **The labels are rooftops, not ground footprints.** ramp's own Shanghai README
+  says the SpaceNet labels were revised "to be consistent with the ramp datasets
+  notion of rooftop as the building footprint". Everything this project has used
+  — Inria, OSM, Open Buildings — labels ground footprints. This app turns *roof*
+  area into kWh, so ramp's semantics are the ones it actually wants.
+* **It is human-reviewed and exhaustive.** "Tier 1" means thoroughly reviewed
+  and improved. Because the tiles are exhaustively labelled, **precision and IoU
+  mean what they say here** — a false positive is a real false positive, not an
+  unmapped building.
+* **It is 30 cm.** Inria is 0.30 m/px and the app serves Esri z19 at ~0.30, so
+  nothing is rescaled. Most candidates fail this: Open Cities is 2–20 cm drone
+  imagery. (ramp's Accra set *is* Open Cities, resampled to 30 cm.)
+
+`scripts/download_ramp.py` fetches any of the 22 regional datasets from open S3;
+`scripts/eval_ramp.py` scores checkpoints against them, reading the GeoTIFF
+tie-point and pixel-scale tags directly rather than adding GDAL or rasterio.
+
+### The result: 494 tiles, 3,945 human-drawn buildings, rural Karnataka
+
+11.7% of the reference area is roof — sparse compared with the dense urban
+blocks every other benchmark in this file uses.
+
+| model | IoU | precision | recall | area ÷ actual |
+|---|---|---|---|---|
+| Inria-only (2026-09-03) | 0.150 | 0.876 | 0.153 | 0.17× |
+| joint, 103 tiles / 2 cities (09-06) | 0.298 | 0.796 | 0.322 | 0.41× |
+| joint v2, 505 tiles / 10 cities (09-07) | 0.469 | 0.731 | 0.568 | 0.78× |
+| **joint v3, 1325 tiles / 25 AOIs (09-08)** | **0.579** | 0.727 | **0.739** | **1.02×** |
+
+**Monotonic in four of four, and the IoU quadruples.**
+
+### Why this matters more than another recall table
+
+This is an **independent audit of every promotion decision the project made**, on
+data that shares nothing with how those decisions were reached: different labels
+(human, exhaustive, rooftop semantics), different sensor (Maxar, not Esri),
+different built form (rural and agricultural, absent from all 25 training
+regions), and never seen in training.
+
+It produces **exactly the same model ordering** the OSM-anchored recall numbers
+did at every step. That retroactively validates the OSM-recall methodology
+itself — the metric that had to be taken on trust because an incomplete
+reference cannot give an IoU.
+
+The last column is the one that reaches users. The app multiplies roof area into
+kWh and money, and the original model recovered **17% of the actual roof area**
+in rural Karnataka — it would have under-estimated solar potential there roughly
+six-fold. The current default lands at **1.02×**. Together with Austin's 1.03×
+(complete OSM, Western), the app's area estimates are now confirmed against
+complete ground truth in two very different places.
+
+Precision falls 0.876 → 0.727 as recall rises 0.153 → 0.739. That is the normal
+trade and it is a good one: the old model's high precision was the arithmetic of
+finding almost nothing.
+
+### Caveats, stated rather than buried
+
+* **Maxar imagery, not Esri.** Same 30 cm, different sensor and processing, so
+  part of any residual gap is provider domain shift rather than model quality.
+* **The 256 px tiles are reflect-padded to the model's 512 window.** Measured
+  rather than assumed: eroding a 32 px border changes IoU by 0.004–0.026, and
+  in the *favourable* direction for the current model (0.579 → 0.604).
+* **CC-BY-NC-4.0.** Non-commercial, and more restrictive than Inria, Open
+  Buildings (CC-BY) or OSM (ODbL). Fine for research; a deliberate decision
+  would be needed before commercial use. This is why ramp is used here as an
+  **evaluation** set and not folded into training.

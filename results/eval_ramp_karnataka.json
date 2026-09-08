@@ -1,0 +1,56 @@
+{
+  "dataset": "ramp_karnataka_india",
+  "source": "ramp (source.coop), CC-BY-NC-4.0",
+  "tiles": 494,
+  "labelled_buildings": 3945,
+  "reference_roof_fraction": 0.1166,
+  "label_semantics": "rooftop (not ground footprint)",
+  "imagery": "Maxar ODP at 30 cm \u2014 NOT the Esri imagery the app serves",
+  "threshold": 0.5,
+  "models": [
+    {
+      "checkpoint": "unetpp_effb0_inria_20260903.pt",
+      "arch": "unet++",
+      "encoder": "efficientnet-b0",
+      "threshold": 0.5,
+      "iou": 0.15,
+      "precision": 0.876,
+      "recall": 0.1533,
+      "predicted_over_reference": 0.175,
+      "iou_border_eroded": 0.1571
+    },
+    {
+      "checkpoint": "joint_v3_effb0_20260906.pt",
+      "arch": "unet++",
+      "encoder": "efficientnet-b0",
+      "threshold": 0.5,
+      "iou": 0.2978,
+      "precision": 0.7959,
+      "recall": 0.3224,
+      "predicted_over_reference": 0.405,
+      "iou_border_eroded": 0.3053
+    },
+    {
+      "checkpoint": "joint_v2_india10_20260907.pt",
+      "arch": "unet++",
+      "encoder": "efficientnet-b0",
+      "threshold": 0.5,
+      "iou": 0.4694,
+      "precision": 0.7306,
+      "recall": 0.5677,
+      "predicted_over_reference": 0.777,
+      "iou_border_eroded": 0.4952
+    },
+    {
+      "checkpoint": "joint_v3_world25_20260908.pt",
+      "arch": "unet++",
+      "encoder": "efficientnet-b0",
+      "threshold": 0.5,
+      "iou": 0.5786,
+      "precision": 0.727,
+      "recall": 0.7393,
+      "predicted_over_reference": 1.017,
+      "iou_border_eroded": 0.6044
+    }
+  ]
+}
