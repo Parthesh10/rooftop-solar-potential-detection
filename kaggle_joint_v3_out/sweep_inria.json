@@ -1,10 +1,10 @@
 [
   {
-    "run": "J1_joint_effb0",
+    "run": "J3_joint_world25",
     "dataset": "inria-official",
-    "best_val_iou": 0.7174843053459636,
-    "best_epoch": 33,
-    "epochs_run": 46,
+    "best_val_iou": 0.7195866049477313,
+    "best_epoch": 43,
+    "epochs_run": 50,
     "model": {
       "arch": "unet++",
       "encoder": "efficientnet-b0",
@@ -30,11 +30,11 @@
     },
     "metrics": {
       "val": {
-        "iou": 0.7174843053459636,
-        "f1": 0.8127993447842984,
-        "accuracy": 0.9626515404972029,
-        "precision": 0.8244053401969846,
-        "recall": 0.8466103230799745
+        "iou": 0.7195866049477313,
+        "f1": 0.8153635837220548,
+        "accuracy": 0.9626674642680604,
+        "precision": 0.8222441307145522,
+        "recall": 0.8515068961208634
       }
     }
   }

@@ -810,3 +810,153 @@ and roughly the reproducibility of the metric itself.
 No hand-drawn evaluation set exists for any of the eight new cities. Everything
 above is OSM-anchored recall, which is honest but cannot give an IoU. That is
 the next thing worth a human's time.
+
+---
+
+## Round 3: four continents, and what the domain boundary actually is (2026-09-08)
+
+`joint_v3_world25_20260908.pt` — Inria plus **1325 tiles from 25 AOIs on four
+continents**. Designed as a single-variable experiment: the non-Western share of
+each epoch is held at **34.8%** against joint v2's 35.2% (1325 tiles × repeat 3
+versus 505 × repeat 8), so the only thing that changes is *how many places*.
+
+That design mattered. Joint v2 moved the tile count and the epoch share
+together, so fact 36's attribution to breadth was inference rather than
+measurement. This run tests it directly.
+
+### Held-out blocks in the new continents
+
+Every block is disjoint from all 25 training AOIs. OSM-anchored **recall** —
+precision and IoU against OSM measure the reference, not the model (fact 28).
+Each cell is Inria-only → joint v2 → round 3.
+
+| block | refs | footprint recall | silent fraction | IoU |
+|---|---|---|---|---|
+| Manila | 937 | 0.495 → 0.692 → **0.964** | 0.267 → 0.140 → **0.010** | 0.419 → 0.476 → **0.553** |
+| São Paulo | 932 | 0.151 → 0.461 → **0.886** | 0.683 → 0.366 → **0.045** | 0.174 → 0.353 → **0.496** |
+| Jakarta | 705 | 0.438 → 0.763 → **0.913** | 0.287 → 0.102 → **0.037** | 0.290 → 0.399 → **0.423** |
+| Lagos | 624 | 0.058 → 0.579 → **0.796** | 0.861 → 0.245 → **0.096** | 0.110 → 0.373 → **0.440** |
+| Nairobi | 557 | 0.162 → 0.523 → **0.750** | 0.704 → 0.359 → **0.105** | 0.315 → 0.375 → **0.408** |
+| Lima | 289 | 0.157 → 0.821 → **0.905** | 0.675 → 0.066 → **0.026** | 0.160 → 0.335 → **0.354** |
+
+Monotonic in six of six, on both metrics, with 289–937 human-drawn references
+per block. São Paulo is the single strongest result the project has measured:
+IoU nearly triples **and precision rises** (0.460 → 0.527) while recall goes
+0.151 → 0.886. Recall gains almost always cost precision; both improving on the
+largest sample rules out "it just paints more area" for that block.
+
+### The finding nobody was looking for
+
+Read the **middle** column. Joint v2 trained on India and nothing else, yet:
+
+| block | Inria-only | joint v2 (India only) |
+|---|---|---|
+| Lima | 0.157 | **0.821** |
+| Lagos | 0.058 | **0.579** |
+| Nairobi | 0.162 | **0.523** |
+| São Paulo | 0.151 | **0.461** |
+
+Five times better in Lima, ten times in Lagos, in continents it had never seen a
+pixel of.
+
+**So the domain boundary is not national or continental.** What separates these
+images from Inria is not "India" — it is dense, small-plot, high-contrast urban
+form, which São Paulo and Lagos and Jakarta share with Chennai and do not share
+with Austin. Facts 30 and 31 framed the problem as *India versus the West*; it
+was always *dense Global South versus sparse Western*, and India was simply the
+first sample of it anyone collected.
+
+That has a practical edge: **each new region is cheaper than the last**, because
+it buys transfer to its neighbours in built form rather than in geography.
+
+### India, where no new tiles were added
+
+Chennai, Delhi and Pune gained nothing new in round 3 — the eight new Indian
+AOIs are tier-2 cities. Any movement here is those cities generalising sideways
+to metros they have never seen:
+
+| block | footprint recall | silent |
+|---|---|---|
+| Chennai | 0.872 → **0.915** | 0.081 → **0.043** |
+| Delhi | 0.840 → **0.912** | 0.080 → **0.064** |
+| Pune | 0.839 → **0.870** | 0.083 → 0.083 |
+
+Small, but in the right direction on five of six figures, and consistent with
+the transfer story above.
+
+### The cost, three rounds running
+
+| model | Inria pooled IoU @0.50 | precision |
+|---|---|---|
+| Inria-only (2026-09-03) | 0.7712 | 0.8454 |
+| joint v2, ten Indian cities | 0.7690 | 0.8477 |
+| **round 3, 25 AOIs / four continents** | **0.7671** | 0.8428 |
+
+**0.0041 total** for four continents of coverage. And note the precision column:
+0.8454 / 0.8477 / 0.8428 is flat, measured against Inria's *ground-truth* labels
+rather than OSM. That is direct evidence of no Western over-painting, and it is
+stronger than the Austin check because the labels are complete by construction.
+
+Training IoU tells the same story from the other side — 0.838 → 0.804 → 0.755
+across the three models. The training set is getting genuinely harder as it
+diversifies; the model is not degrading.
+
+### Still missing
+
+* **No hand-drawn eval set for any of the 25 regions.** Every non-Inria number
+  here is OSM-anchored recall. It is honest and it is the right metric given an
+  incomplete reference, but it cannot produce a trustworthy IoU.
+### The over-painting check, settled in the West
+
+Round 3 predicts 1.5–2.0× the OSM area in the new continents, which is the
+figure that would normally block a promotion. Austin answers it, because there
+OSM is complete enough that precision and area both mean something:
+
+| Austin | IoU | precision | recall | silent | area ÷ OSM |
+|---|---|---|---|---|---|
+| Inria-only | 0.814 | 0.898 | 0.943 | 0.019 | 1.00× |
+| **round 3** | **0.828** | 0.891 | **0.962** | **0.010** | **1.03×** |
+
+Round 3 does not merely avoid regressing in the West — it is **better** there
+than the model trained on nothing but Western cities, against complete ground
+truth, while tripling recall across the Global South.
+
+Inria's own ground-truth labels say the same from the other direction:
+precision 0.8454 / 0.8477 / 0.8428 across the three models is flat.
+
+**So this model is promoted to the default.**
+
+### A verification guard that had it exactly backwards
+
+`scripts/export_onnx.py` refused to ship this model: `max |torch - onnx| =
+1.25e-03 (TOO LARGE)`. Investigating rather than overriding it turned up a real
+bug in the check.
+
+It compared raw **logits**, on a fresh `torch.randn` draw, against an absolute
+1e-3 tolerance. Measured across five seeds and against real imagery:
+
+| | noise logits (what the guard tested) | real imagery, probability error | decision flips |
+|---|---|---|---|
+| joint_v3 (**failed**) | 7.4e-04 – 2.0e-03, failed 4/5 draws | **8.7e-05** | **2** / 1,048,576 |
+| joint_v2 (**passed**) | 9.9e-05 – 1.2e-04, passed 5/5 | 4.2e-04 | 3 / 1,048,576 |
+
+**The guard blocked the better export and had already shipped the worse one.**
+On real imagery joint_v3's probability error was five times *smaller* than the
+model it passed, and it flipped fewer pixels.
+
+The discrepancy lives where the sigmoid is saturated. A 1.6e-03 wobble at
+|logit| ≈ 15 moves the probability by ~1e-8 and cannot change an output. The
+guard measured error exactly where the model is most certain — where error
+cannot matter — and a model that generalises more broadly saturates harder on
+out-of-distribution noise, so **the better the model, the more likely it was to
+be rejected**.
+
+The check now uses a fixed seed, an input scaled like normalised imagery, and
+gates on the **probability** error plus the fraction of thresholded decisions
+that change. All three shipped models pass with zero decision flips:
+
+| model | logit diff | probability diff | flips |
+|---|---|---|---|
+| joint_v3 | 1.63e-03 | 1.10e-08 | 0 |
+| joint_v2 | 1.34e-04 | 5.60e-10 | 0 |
+| Inria-only | 5.91e-05 | 2.18e-09 | 0 |

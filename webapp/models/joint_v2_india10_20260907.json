@@ -26,7 +26,7 @@
   "serving_zoom": 19,
   "label_semantics": "building-footprint",
   "recommended_packing_factor": 0.7,
-  "default": true,
+  "default": false,
   "trained_on": "inria-official + india-10-cities (Open Buildings + OSM)",
   "metrics": {
     "harness": "scripts/eval_inria.py (pooled IoU, 25 official val tiles) and scripts/eval_india_osm.py on blocks disjoint from every training AOI",

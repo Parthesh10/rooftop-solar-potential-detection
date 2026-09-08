@@ -124,6 +124,66 @@
         "Trained on the same five Western cities; more data from them, not more places."
       ]
     },
+    "joint_v3_world25_20260908.pt": {
+      "arch": "unet++",
+      "encoder": "efficientnet-b0",
+      "encoder_weights": "imagenet",
+      "in_channels": 3,
+      "out_channels": 1,
+      "bilinear": false,
+      "stats_key": "imagenet",
+      "threshold": 0.5,
+      "tta": false,
+      "trained_on": "inria-official + world-25-aois (Open Buildings + OSM)",
+      "epochs": 50,
+      "window": 512,
+      "gsd_m_per_px": 0.3,
+      "serving_zoom": 19,
+      "default": true,
+      "label_semantics": "building-footprint",
+      "recommended_packing_factor": 0.7,
+      "note": "THE SHIPPED MODEL since 2026-09-08. Inria plus 1325 tiles from 25 AOIs on FOUR CONTINENTS - India (16 cities), Africa (Lagos, Nairobi, Accra, Addis), Southeast Asia (Dhaka, Jakarta, Manila) and Latin America (Sao Paulo, Lima) - at --extra-repeat 3, i.e. 34.8% of each epoch against joint_v2's 35.2%. A deliberate single-variable experiment: the share is held constant so only BREADTH changes. It improved held-out footprint recall in six of six new-continent blocks while Inria moved 0.7690 -> 0.7671.",
+      "metrics_verified": {
+        "harness": "scripts/eval_inria.py (pooled IoU, 25 official val tiles) and scripts/eval_india_osm.py on blocks disjoint from every training AOI",
+        "measured": "2026-09-08",
+        "val": {
+          "iou": 0.7671,
+          "f1": 0.8682,
+          "precision": 0.8428,
+          "recall": 0.8952,
+          "threshold": 0.5,
+          "tta": false,
+          "inria_only_baseline_iou": 0.7712,
+          "joint_v2_baseline_iou": 0.769,
+          "note": "Precision on Inria is 0.8428 against the Inria-only model's 0.8454 and joint_v2's 0.8477 - essentially unchanged. That is ground-truth evidence of no Western over-painting, and it is stronger than any OSM-based check."
+        },
+        "_per_window_mean": {
+          "iou": 0.7196,
+          "train_iou": 0.7545,
+          "note": "Training IoU fell 0.838 -> 0.804 -> 0.755 across the Inria-only, ten-city and 25-AOI models. That is the training set becoming genuinely harder as it diversifies, not the model degrading."
+        },
+        "new_continent_heldout_at_0.50": {
+          "_note": "Blocks disjoint from all training AOIs. OSM-anchored RECALL only. Each row is Inria-only -> joint_v2 -> this model.",
+          "manila": {"refs": 937, "footprint_recall": [0.495, 0.692, 0.964], "silent_fraction": [0.267, 0.14, 0.01], "iou": [0.419, 0.476, 0.553]},
+          "saopaulo": {"refs": 932, "footprint_recall": [0.151, 0.461, 0.886], "silent_fraction": [0.683, 0.366, 0.045], "iou": [0.174, 0.353, 0.496], "precision": [0.46, 0.532, 0.527]},
+          "jakarta": {"refs": 705, "footprint_recall": [0.438, 0.763, 0.913], "silent_fraction": [0.287, 0.102, 0.037], "iou": [0.29, 0.399, 0.423]},
+          "lagos": {"refs": 624, "footprint_recall": [0.058, 0.579, 0.796], "silent_fraction": [0.861, 0.245, 0.096], "iou": [0.11, 0.373, 0.44]},
+          "nairobi": {"refs": 557, "footprint_recall": [0.162, 0.523, 0.75], "silent_fraction": [0.704, 0.359, 0.105], "iou": [0.315, 0.375, 0.408]},
+          "lima": {"refs": 289, "footprint_recall": [0.157, 0.821, 0.905], "silent_fraction": [0.675, 0.066, 0.026], "iou": [0.16, 0.335, 0.354]}
+        },
+        "india_heldout_at_0.50": {
+          "_note": "These three cities gained no NEW tiles in this round, so any gain is the eight Indian tier-2 cities generalising sideways. joint_v2 -> this model.",
+          "chennai": {"footprint_recall": [0.872, 0.915], "silent_fraction": [0.081, 0.043]},
+          "delhi": {"footprint_recall": [0.84, 0.912], "silent_fraction": [0.08, 0.064]},
+          "pune": {"footprint_recall": [0.839, 0.87], "silent_fraction": [0.083, 0.083]}
+        }
+      },
+      "limitations": [
+        "Merges adjacent roofs into blobs in dense blocks, so building COUNT is less reliable than area.",
+        "No hand-drawn eval set exists for ANY of the 25 training regions. Every non-Inria number is OSM-anchored recall - honest, but it cannot give a trustworthy IoU or precision.",
+        "Predicts 1.5-2.0x the OSM area in the new continents. In Austin, where OSM is complete, joint_v2 measured 0.98x; this model's equivalent check was blocked by Overpass rate limiting and is still outstanding."
+      ]
+    },
     "joint_v2_india10_20260907.pt": {
       "arch": "unet++",
       "encoder": "efficientnet-b0",
@@ -139,10 +199,11 @@
       "window": 512,
       "gsd_m_per_px": 0.3,
       "serving_zoom": 19,
-      "default": true,
+      "default": false,
+      "_default_history": "Shipped as the default from 2026-09-07 to 2026-09-08, when joint_v3_world25_20260908.pt superseded it.",
       "label_semantics": "building-footprint",
       "recommended_packing_factor": 0.7,
-      "note": "THE SHIPPED MODEL since 2026-09-07. Inria plus 505 Indian tiles from TEN cities (402 machine-labelled from Google Open Buildings across eight new cities, plus the 103 OSM-relabelled Bangalore/Bhopal tiles), repeated 8x for ~35% of each epoch. THE FIRST MODEL IN THIS PROJECT TO IMPROVE INDIA WITHOUT PAYING FOR IT ON INRIA: 0.7690 pooled against the shipped 0.7712, a 0.0022 cost that is inside measurement noise, while the silent fraction on held-out blocks falls from 0.744 to 0.080 (Delhi), 0.538 to 0.154 (Mumbai) and 0.379 to 0.081 (Chennai). Every earlier model bought one number at the other's expense - see facts 30 and 31.",
+      "note": "Inria plus 505 Indian tiles from TEN cities (402 machine-labelled from Google Open Buildings across eight new cities, plus the 103 OSM-relabelled Bangalore/Bhopal tiles), repeated 8x for ~35% of each epoch. THE FIRST MODEL IN THIS PROJECT TO IMPROVE INDIA WITHOUT PAYING FOR IT ON INRIA: 0.7690 pooled against the shipped 0.7712, a 0.0022 cost that is inside measurement noise, while the silent fraction on held-out blocks falls from 0.744 to 0.080 (Delhi), 0.538 to 0.154 (Mumbai) and 0.379 to 0.081 (Chennai). Every earlier model bought one number at the other's expense - see facts 30 and 31.",
       "metrics_verified": {
         "harness": "scripts/eval_inria.py (pooled IoU, 25 official val tiles) and scripts/eval_india_osm.py on blocks disjoint from every training AOI",
         "measured": "2026-09-07",

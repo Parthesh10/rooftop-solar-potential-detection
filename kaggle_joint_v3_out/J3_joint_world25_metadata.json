@@ -1,6 +1,6 @@
 {
-  "created": "2026-09-05T11:05:51",
-  "git_sha": "d0975d69fc0133f5b9e94b33185f2ca04c6d00a0",
+  "created": "2026-09-07T22:11:04",
+  "git_sha": "8e28440c3eae00b144b8761c4b9033ce33153886",
   "config": {
     "arch": "unet++",
     "encoder": "efficientnet-b0",
@@ -26,7 +26,7 @@
     "early_stop_patience": 12,
     "threshold": 0.5,
     "seed": 0,
-    "amp": "auto",
+    "amp": "fp16",
     "gpu_mem_fraction": 0.95,
     "gpu_util_target": null,
     "gpu_temp_limit": null,
@@ -36,30 +36,30 @@
     "wandb_run_name": null,
     "extra": {}
   },
-  "epoch": 33,
+  "epoch": 43,
   "val_metrics": {
-    "iou": 0.7174843053459636,
-    "iou_undefined": 422,
-    "iou_n": 1603,
-    "f1": 0.8127993447842984,
-    "f1_undefined": 422,
-    "f1_n": 1603,
-    "accuracy": 0.9626515404972029,
+    "iou": 0.7195866049477313,
+    "iou_undefined": 426,
+    "iou_n": 1599,
+    "f1": 0.8153635837220548,
+    "f1_undefined": 426,
+    "f1_n": 1599,
+    "accuracy": 0.9626674642680604,
     "accuracy_undefined": 0,
     "accuracy_n": 2025,
-    "recall": 0.8466103230799745,
+    "recall": 0.8515068961208634,
     "recall_undefined": 447,
     "recall_n": 1578,
-    "precision": 0.8244053401969846,
-    "precision_undefined": 457,
-    "precision_n": 1568,
+    "precision": 0.8222441307145522,
+    "precision_undefined": 459,
+    "precision_n": 1566,
     "n_images": 2025,
     "positive_pixel_rate": 0.1373943677360629,
     "threshold": 0.5,
     "tta": false,
-    "loss": 0.20318886427956773
+    "loss": 0.20082692690486983
   },
   "device": "cuda",
-  "amp": false,
-  "amp_dtype": "None"
+  "amp": true,
+  "amp_dtype": "torch.float16"
 }

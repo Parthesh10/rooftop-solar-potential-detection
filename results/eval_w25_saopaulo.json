@@ -1,0 +1,170 @@
+{
+  "bounds": [
+    -46.56,
+    -23.532,
+    -46.555,
+    -23.528
+  ],
+  "zoom": 19,
+  "provider": "esri",
+  "metres_per_px": 0.2738,
+  "reference": "OpenStreetMap building ways (incomplete \u2014 recall only)",
+  "reference_buildings": 932,
+  "reference_area_m2": 114749,
+  "threshold": 0.5,
+  "models": [
+    {
+      "checkpoint": "unetpp_effb0_inria_20260903.pt",
+      "arch": "unet++",
+      "encoder": "efficientnet-b0",
+      "threshold": 0.5,
+      "iou": 0.1739,
+      "precision": 0.4601,
+      "recall": 0.2184,
+      "predicted_area_m2": 54468,
+      "area_ratio_vs_osm": 0.475,
+      "footprints_scored": 919,
+      "footprint_recall": 0.151,
+      "silent_fraction": 0.683,
+      "by_size": [
+        {
+          "from_m2": 0,
+          "to_m2": 50,
+          "n": 320,
+          "recall": 0.134,
+          "median_probability": 0.0218
+        },
+        {
+          "from_m2": 50,
+          "to_m2": 100,
+          "n": 234,
+          "recall": 0.107,
+          "median_probability": 0.0215
+        },
+        {
+          "from_m2": 100,
+          "to_m2": 200,
+          "n": 226,
+          "recall": 0.115,
+          "median_probability": 0.0199
+        },
+        {
+          "from_m2": 200,
+          "to_m2": 500,
+          "n": 107,
+          "recall": 0.318,
+          "median_probability": 0.13
+        },
+        {
+          "from_m2": 500,
+          "to_m2": null,
+          "n": 32,
+          "recall": 0.344,
+          "median_probability": 0.0791
+        }
+      ]
+    },
+    {
+      "checkpoint": "joint_v2_india10_20260907.pt",
+      "arch": "unet++",
+      "encoder": "efficientnet-b0",
+      "threshold": 0.5,
+      "iou": 0.3532,
+      "precision": 0.5324,
+      "recall": 0.512,
+      "predicted_area_m2": 110346,
+      "area_ratio_vs_osm": 0.962,
+      "footprints_scored": 919,
+      "footprint_recall": 0.461,
+      "silent_fraction": 0.366,
+      "by_size": [
+        {
+          "from_m2": 0,
+          "to_m2": 50,
+          "n": 320,
+          "recall": 0.366,
+          "median_probability": 0.1051
+        },
+        {
+          "from_m2": 50,
+          "to_m2": 100,
+          "n": 234,
+          "recall": 0.504,
+          "median_probability": 0.53
+        },
+        {
+          "from_m2": 100,
+          "to_m2": 200,
+          "n": 226,
+          "recall": 0.504,
+          "median_probability": 0.5194
+        },
+        {
+          "from_m2": 200,
+          "to_m2": 500,
+          "n": 107,
+          "recall": 0.514,
+          "median_probability": 0.6094
+        },
+        {
+          "from_m2": 500,
+          "to_m2": null,
+          "n": 32,
+          "recall": 0.625,
+          "median_probability": 0.687
+        }
+      ]
+    },
+    {
+      "checkpoint": "joint_v3_world25_20260908.pt",
+      "arch": "unet++",
+      "encoder": "efficientnet-b0",
+      "threshold": 0.5,
+      "iou": 0.4961,
+      "precision": 0.5275,
+      "recall": 0.8928,
+      "predicted_area_m2": 194209,
+      "area_ratio_vs_osm": 1.692,
+      "footprints_scored": 919,
+      "footprint_recall": 0.886,
+      "silent_fraction": 0.045,
+      "by_size": [
+        {
+          "from_m2": 0,
+          "to_m2": 50,
+          "n": 320,
+          "recall": 0.775,
+          "median_probability": 0.9233
+        },
+        {
+          "from_m2": 50,
+          "to_m2": 100,
+          "n": 234,
+          "recall": 0.944,
+          "median_probability": 0.9789
+        },
+        {
+          "from_m2": 100,
+          "to_m2": 200,
+          "n": 226,
+          "recall": 0.947,
+          "median_probability": 0.9764
+        },
+        {
+          "from_m2": 200,
+          "to_m2": 500,
+          "n": 107,
+          "recall": 0.935,
+          "median_probability": 0.9764
+        },
+        {
+          "from_m2": 500,
+          "to_m2": null,
+          "n": 32,
+          "recall": 0.969,
+          "median_probability": 0.9739
+        }
+      ]
+    }
+  ]
+}
