@@ -51,13 +51,39 @@ from scripts.eval_india_osm import build_torch_bundle, pooled_scores
 from webapp.inference import predict_mask
 
 
+def epsg_of(page) -> int:
+    """The tile's CRS, from the GeoTIFF GeoKeyDirectory.
+
+    **This is not a formality — ramp mixes CRSs across its datasets.** Karnataka
+    is EPSG:4326 (degrees) while Dhaka, Accra and Nairobi are UTM zones 46N,
+    30N and 37S (metres). The labels are GeoJSON, which is *always* WGS84
+    lon/lat, so a harness that assumes the raster is also lon/lat produces a
+    silently empty mask on three datasets out of four — roof fraction 0.000
+    rather than an exception. Read the CRS; never infer it.
+    """
+    gk = {t.name: t.value for t in page.tags.values()}.get("GeoKeyDirectoryTag")
+    if not gk:
+        return 4326
+    # Header is 4 shorts, then 4-short entries: (key, location, count, value).
+    for i in range(4, len(gk) - 3, 4):
+        key, _loc, _cnt, val = gk[i:i + 4]
+        if key == 3072:            # ProjectedCSTypeGeoKey
+            return int(val)
+        if key == 2048:            # GeographicTypeGeoKey
+            return int(val)
+    return 4326
+
+
 def geotransform(page) -> tuple[float, float, float, float]:
-    """(lon0, lat0, dlon, dlat) for a north-up GeoTIFF tile.
+    """(x0, y0, dx, dy) for a north-up GeoTIFF tile, in the tile's own CRS.
 
     ramp tiles carry ModelTiepointTag + ModelPixelScaleTag rather than a full
     transform, which is the simple north-up case: pixel (0,0) sits at the tie
     point and each pixel steps by the scale. Read straight from the tags so the
     project keeps its no-GDAL, no-rasterio dependency footing.
+
+    Units follow the CRS — degrees for EPSG:4326, metres for a UTM zone — so
+    pair this with :func:`epsg_of` rather than assuming.
     """
     tags = {t.name: t.value for t in page.tags.values()}
     tie = tags.get("ModelTiepointTag")
@@ -67,9 +93,29 @@ def geotransform(page) -> tuple[float, float, float, float]:
     return float(tie[3]), float(tie[4]), float(scale[0]), float(scale[1])
 
 
-def rasterise(features, gt, shape) -> np.ndarray:
-    """ramp polygons -> boolean mask on the tile's own pixel grid."""
+_TRANSFORMERS: dict[int, object] = {}
+
+
+def _to_raster_crs(epsg: int):
+    """WGS84 lon/lat -> the raster's CRS. Identity for 4326. Cached, because
+    building a pyproj Transformer per polygon is far slower than the rasterising."""
+    if epsg == 4326:
+        return None
+    if epsg not in _TRANSFORMERS:
+        from pyproj import Transformer
+        _TRANSFORMERS[epsg] = Transformer.from_crs(4326, epsg, always_xy=True)
+    return _TRANSFORMERS[epsg]
+
+
+def rasterise(features, gt, shape, epsg: int = 4326) -> np.ndarray:
+    """ramp polygons -> boolean mask on the tile's own pixel grid.
+
+    GeoJSON coordinates are lon/lat by specification; the raster may not be
+    (see :func:`epsg_of`), so project the ring into the raster's CRS before
+    touching the geotransform.
+    """
     lon0, lat0, dlon, dlat = gt
+    tf = _to_raster_crs(epsg)
     mask = np.zeros(shape, np.uint8)
     for feat in features:
         geom = feat.get("geometry") or {}
@@ -83,24 +129,27 @@ def rasterise(features, gt, shape) -> np.ndarray:
         for ring in rings:
             if not ring or len(ring) < 3:
                 continue
-            pts = np.array([[int(round((lon - lon0) / dlon)),
-                             int(round((lat0 - lat) / dlat))]
-                            for lon, lat in ring], np.int32)
+            xy = ring if tf is None else [tf.transform(lon, lat)
+                                          for lon, lat in ring]
+            pts = np.array([[int(round((x - lon0) / dlon)),
+                             int(round((lat0 - y) / dlat))]
+                            for x, y in xy], np.int32)
             cv2.fillPoly(mask, [pts], 1)
     return mask.astype(bool)
 
 
 def load_tile(stem: str, data: Path):
-    with tifffile.TiffFile(data / "source" / f"{stem}.tif") as tf:
-        page = tf.pages[0]
+    with tifffile.TiffFile(data / "source" / f"{stem}.tif") as tfl:
+        page = tfl.pages[0]
         img = page.asarray()
         gt = geotransform(page)
+        epsg = epsg_of(page)
     if img.ndim == 2:
         img = np.stack([img] * 3, -1)
     img = img[..., :3]
     feats = json.loads((data / "labels" / f"{stem}.geojson").read_text(
         encoding="utf-8")).get("features", [])
-    return img, rasterise(feats, gt, img.shape[:2]), len(feats)
+    return img, rasterise(feats, gt, img.shape[:2], epsg), len(feats)
 
 
 def main() -> None:

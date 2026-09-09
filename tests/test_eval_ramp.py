@@ -138,6 +138,66 @@ def test_rasterise_clips_to_tile():
     assert not m[40:, 40:].any()
 
 
+def test_epsg_of_reads_projected_crs():
+    """ramp MIXES CRSs and the labels are always WGS84 GeoJSON.
+
+    Karnataka is EPSG:4326 (degrees) while Dhaka, Accra and Nairobi are UTM
+    zones 46N / 30N / 37S (metres). Assuming lon/lat for all of them produced a
+    silently EMPTY mask on three datasets out of four — roof fraction 0.000
+    rather than an exception — which would have been read as "the model finds
+    nothing in Dhaka" rather than "the harness is broken".
+    """
+    from scripts.eval_ramp import epsg_of
+    # GeoKeyDirectory: 4-short header, then (key, location, count, value).
+    proj = _Page(TIE, SCALE)
+    proj.tags._d["GeoKeyDirectoryTag"] = (1, 1, 0, 1, 3072, 0, 1, 32646)
+    assert epsg_of(proj) == 32646
+
+    geog = _Page(TIE, SCALE)
+    geog.tags._d["GeoKeyDirectoryTag"] = (1, 1, 0, 1, 2048, 0, 1, 4326)
+    assert epsg_of(geog) == 4326
+
+
+def test_epsg_of_defaults_to_wgs84_without_tags():
+    from scripts.eval_ramp import epsg_of
+    assert epsg_of(_Page(TIE, SCALE)) == 4326
+
+
+def test_rasterise_projects_into_a_utm_raster():
+    """A UTM tile plus WGS84 labels must still land in the right pixels."""
+    from pyproj import Transformer
+    epsg = 32646                                    # Dhaka, UTM 46N
+    fwd = Transformer.from_crs(4326, epsg, always_xy=True)
+    lon, lat = 90.37, 23.80                         # in Dhaka
+    x0, y0 = fwd.transform(lon, lat)
+    gt = (x0, y0, 0.30, 0.30)                       # metres per pixel
+
+    inv = Transformer.from_crs(epsg, 4326, always_xy=True)
+    corners_m = [(x0 + 20 * 0.3, y0 - 30 * 0.3), (x0 + 60 * 0.3, y0 - 30 * 0.3),
+                 (x0 + 60 * 0.3, y0 - 70 * 0.3), (x0 + 20 * 0.3, y0 - 70 * 0.3)]
+    ring = [inv.transform(x, y) for x, y in corners_m]
+    ring.append(ring[0])
+    feats = [{"type": "Feature",
+              "geometry": {"type": "Polygon", "coordinates": [ring]}}]
+
+    m = rasterise(feats, gt, (256, 256), epsg=epsg)
+    ys, xs = np.nonzero(m)
+    assert m.any(), "UTM raster + WGS84 labels rasterised to nothing"
+    assert xs.min() == pytest.approx(20, abs=2)
+    assert xs.max() == pytest.approx(60, abs=2)
+    assert ys.min() == pytest.approx(30, abs=2)
+    assert ys.max() == pytest.approx(70, abs=2)
+
+
+def test_rasterise_wgs84_path_unchanged_by_the_crs_fix():
+    """The degrees path must behave exactly as before — Karnataka's numbers
+    were verified by eye and must not move."""
+    gt = (75.0, 12.0, 1e-5, 1e-5)
+    a = rasterise([_square(*gt, 10, 20, 30, 40)], gt, (256, 256))
+    b = rasterise([_square(*gt, 10, 20, 30, 40)], gt, (256, 256), epsg=4326)
+    assert np.array_equal(a, b)
+
+
 def test_real_label_file_shape():
     """The on-disk format this harness assumes: a FeatureCollection of Polygons
     with a 'building' label property."""
