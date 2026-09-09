@@ -1,0 +1,45 @@
+{
+  "dataset": "ramp_accra_ghana",
+  "source": "ramp (source.coop), CC-BY-NC-4.0",
+  "tiles": 400,
+  "labelled_buildings": 11613,
+  "reference_roof_fraction": 0.4072,
+  "label_semantics": "rooftop (not ground footprint)",
+  "imagery": "Maxar ODP at 30 cm \u2014 NOT the Esri imagery the app serves",
+  "threshold": 0.5,
+  "models": [
+    {
+      "checkpoint": "unetpp_effb0_inria_20260903.pt",
+      "arch": "unet++",
+      "encoder": "efficientnet-b0",
+      "threshold": 0.5,
+      "iou": 0.3887,
+      "precision": 0.79,
+      "recall": 0.4334,
+      "predicted_over_reference": 0.549,
+      "iou_border_eroded": 0.402
+    },
+    {
+      "checkpoint": "joint_v2_india10_20260907.pt",
+      "arch": "unet++",
+      "encoder": "efficientnet-b0",
+      "threshold": 0.5,
+      "iou": 0.4078,
+      "precision": 0.7937,
+      "recall": 0.4562,
+      "predicted_over_reference": 0.575,
+      "iou_border_eroded": 0.4276
+    },
+    {
+      "checkpoint": "joint_v3_world25_20260908.pt",
+      "arch": "unet++",
+      "encoder": "efficientnet-b0",
+      "threshold": 0.5,
+      "iou": 0.5245,
+      "precision": 0.759,
+      "recall": 0.6293,
+      "predicted_over_reference": 0.829,
+      "iou_border_eroded": 0.5464
+    }
+  ]
+}

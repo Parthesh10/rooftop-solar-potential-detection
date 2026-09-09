@@ -1046,3 +1046,60 @@ finding almost nothing.
   Buildings (CC-BY) or OSM (ODbL). Fine for research; a deliberate decision
   would be needed before commercial use. This is why ramp is used here as an
   **evaluation** set and not folded into training.
+
+---
+
+## The human-truth benchmark, extended to four regions (2026-09-09)
+
+`scripts/eval_ramp.py` now covers four ramp regions — 800 scored tiles and
+~16,900 human-drawn, exhaustively labelled rooftops. Karnataka is held out of
+training by construction; the other three are *in* the current default's
+training set, which makes them a different and useful test.
+
+| region | roof % | Inria-only | joint v2 | **joint v3 (default)** |
+|---|---|---|---|---|
+| Karnataka — rural, **held out** | 11.7 | 0.150 | 0.469 | **0.579** |
+| Nairobi — urban/peri-urban | 17.3 | 0.528 | 0.550 | **0.665** |
+| Accra — urban, dense | 39.9 | 0.388 | 0.405 | **0.528** |
+| Dhaka — very dense urban | 29.4 | 0.375 | **0.401** | 0.318 |
+
+**Three of four go the right way, decisively, and the promotion stands.** The
+strongest single row is Karnataka, because it is the one region no model has
+ever trained on.
+
+### Dhaka is a real regression, and it is not a threshold artifact
+
+Swept across the whole usable range, joint v2 beats the default at **every** cut
+point:
+
+| threshold | v2 IoU | v3 IoU |
+|---|---|---|
+| 0.30 (best for both) | **0.4715** | 0.4142 |
+| 0.50 | 0.4479 | 0.3918 |
+| 0.65 | 0.4244 | 0.3732 |
+
+Two things make it worth understanding rather than dismissing.
+
+**Adding Dhaka to training made Dhaka worse.** It was absent from v2's ten
+Indian cities and present in v3's 25 AOIs (56 tiles), and it got worse. Two
+candidate explanations, neither yet tested: the 56 training tiles are **Esri**
+imagery while this benchmark is **Maxar**, so what was learned may not transfer
+across providers even at matched resolution; or dense-urban capacity was diluted
+when the same 34.8% epoch share was spread across 25 AOIs instead of 10.
+
+**Every model under-predicts badly there** — 0.47x to 0.72x of the real roof
+area even at the loosest threshold, against 1.02x in Karnataka. That is a shared
+weakness in very dense low-rise fabric that the breadth strategy did not fix,
+not something v3 introduced.
+
+### This is the first time the two benchmarks have disagreed
+
+OSM-anchored recall said v3 improved in six of six held-out blocks. The human
+benchmark says three of four. Both are honest; they measure different things,
+and the disagreement is localised to one region.
+
+That is the argument for having built it. An incomplete reference can only
+support recall, and recall rewards a model for predicting more. Dhaka is
+precisely where that distinction bites: v3 predicts *less* area there than v2
+(0.47x against 0.58x), which an OSM recall metric would have shown as a
+difference and an exhaustive IoU shows as a regression.

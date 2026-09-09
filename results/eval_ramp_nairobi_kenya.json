@@ -1,0 +1,45 @@
+{
+  "dataset": "ramp_nairobi_kenya",
+  "source": "ramp (source.coop), CC-BY-NC-4.0",
+  "tiles": 200,
+  "labelled_buildings": 3771,
+  "reference_roof_fraction": 0.1729,
+  "label_semantics": "rooftop (not ground footprint)",
+  "imagery": "Maxar ODP at 30 cm \u2014 NOT the Esri imagery the app serves",
+  "threshold": 0.5,
+  "models": [
+    {
+      "checkpoint": "unetpp_effb0_inria_20260903.pt",
+      "arch": "unet++",
+      "encoder": "efficientnet-b0",
+      "threshold": 0.5,
+      "iou": 0.5279,
+      "precision": 0.8809,
+      "recall": 0.5685,
+      "predicted_over_reference": 0.645,
+      "iou_border_eroded": 0.5307
+    },
+    {
+      "checkpoint": "joint_v2_india10_20260907.pt",
+      "arch": "unet++",
+      "encoder": "efficientnet-b0",
+      "threshold": 0.5,
+      "iou": 0.5497,
+      "precision": 0.8507,
+      "recall": 0.6084,
+      "predicted_over_reference": 0.715,
+      "iou_border_eroded": 0.5556
+    },
+    {
+      "checkpoint": "joint_v3_world25_20260908.pt",
+      "arch": "unet++",
+      "encoder": "efficientnet-b0",
+      "threshold": 0.5,
+      "iou": 0.665,
+      "precision": 0.862,
+      "recall": 0.7442,
+      "predicted_over_reference": 0.863,
+      "iou_border_eroded": 0.6788
+    }
+  ]
+}

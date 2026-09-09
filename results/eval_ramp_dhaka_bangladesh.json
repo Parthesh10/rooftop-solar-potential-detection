@@ -1,0 +1,45 @@
+{
+  "dataset": "ramp_dhaka_bangladesh",
+  "source": "ramp (source.coop), CC-BY-NC-4.0",
+  "tiles": 200,
+  "labelled_buildings": 3335,
+  "reference_roof_fraction": 0.2941,
+  "label_semantics": "rooftop (not ground footprint)",
+  "imagery": "Maxar ODP at 30 cm \u2014 NOT the Esri imagery the app serves",
+  "threshold": 0.5,
+  "models": [
+    {
+      "checkpoint": "unetpp_effb0_inria_20260903.pt",
+      "arch": "unet++",
+      "encoder": "efficientnet-b0",
+      "threshold": 0.5,
+      "iou": 0.3746,
+      "precision": 0.7949,
+      "recall": 0.4147,
+      "predicted_over_reference": 0.522,
+      "iou_border_eroded": 0.3821
+    },
+    {
+      "checkpoint": "joint_v2_india10_20260907.pt",
+      "arch": "unet++",
+      "encoder": "efficientnet-b0",
+      "threshold": 0.5,
+      "iou": 0.4005,
+      "precision": 0.7759,
+      "recall": 0.4529,
+      "predicted_over_reference": 0.584,
+      "iou_border_eroded": 0.4115
+    },
+    {
+      "checkpoint": "joint_v3_world25_20260908.pt",
+      "arch": "unet++",
+      "encoder": "efficientnet-b0",
+      "threshold": 0.5,
+      "iou": 0.3183,
+      "precision": 0.7517,
+      "recall": 0.3557,
+      "predicted_over_reference": 0.473,
+      "iou_border_eroded": 0.318
+    }
+  ]
+}
