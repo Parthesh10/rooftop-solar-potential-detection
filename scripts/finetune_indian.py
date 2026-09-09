@@ -162,14 +162,20 @@ def main() -> None:
                     help="log to Weights & Biases (needs `wandb login`); "
                         "no-ops if wandb is missing")
     ap.add_argument("--label-semantics", default="building-cluster-envelope",
-                    choices=["building-footprint", "building-cluster-envelope"],
-                    help="what the hand-drawn labels actually outline. "
+                    choices=["building-footprint", "building-cluster-envelope",
+                             "rooftop"],
+                    help="what the labels actually outline. "
                         "'building-cluster-envelope' means adjacent buildings "
                         "and the alleys between them were merged into one "
                         "polygon, so predicted area includes non-roof gaps and "
-                        "needs a lower packing factor downstream. Recorded in "
-                        "the checkpoint metadata so export_onnx.py and the app "
-                        "cannot silently treat it as an Inria footprint model")
+                        "needs a lower packing factor downstream. "
+                        "'rooftop' is ramp's target — the visible roof rather "
+                        "than the ground footprint, which for a tall building "
+                        "is displaced from it; this is what a solar tool "
+                        "actually wants, since it multiplies ROOF area into "
+                        "kWh. Recorded in the checkpoint metadata so "
+                        "export_onnx.py and the app cannot silently treat one "
+                        "as another")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--run-name", default="finetune_indian")
     ap.add_argument("--out", default=None,

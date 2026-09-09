@@ -1051,17 +1051,21 @@ finding almost nothing.
 
 ## The human-truth benchmark, extended to four regions (2026-09-09)
 
-`scripts/eval_ramp.py` now covers four ramp regions — 800 scored tiles and
-~16,900 human-drawn, exhaustively labelled rooftops. Karnataka is held out of
+`scripts/eval_ramp.py` now covers four ramp regions — **1,494 scored tiles and
+26,946 human-drawn, exhaustively labelled rooftops**. Karnataka is held out of
 training by construction; the other three are *in* the current default's
 training set, which makes them a different and useful test.
 
-| region | roof % | Inria-only | joint v2 | **joint v3 (default)** |
-|---|---|---|---|---|
-| Karnataka — rural, **held out** | 11.7 | 0.150 | 0.469 | **0.579** |
-| Nairobi — urban/peri-urban | 17.3 | 0.528 | 0.550 | **0.665** |
-| Accra — urban, dense | 39.9 | 0.388 | 0.405 | **0.528** |
-| Dhaka — very dense urban | 29.4 | 0.375 | **0.401** | 0.318 |
+| region | tiles | buildings | roof % | Inria-only | joint v2 | **joint v3 (default)** |
+|---|---|---|---|---|---|---|
+| Karnataka — rural, **held out** | 494 | 3,945 | 11.7 | 0.150 | 0.469 | **0.579** |
+| Nairobi — urban/peri-urban | 400 | 8,053 | 18.1 | 0.523 | 0.544 | **0.666** |
+| Accra — urban, dense | 400 | 11,613 | 40.7 | 0.389 | 0.408 | **0.525** |
+| Dhaka — very dense urban | 200 | 3,335 | 29.4 | 0.375 | **0.401** | 0.318 |
+
+The numbers are stable against sample size: Accra and Nairobi were scored twice,
+at 200 and 400 tiles, and agreed to within 0.004 IoU (0.528 vs 0.525, 0.665 vs
+0.666). That is worth knowing before reading any single row as precise.
 
 **Three of four go the right way, decisively, and the promotion stands.** The
 strongest single row is Karnataka, because it is the one region no model has
