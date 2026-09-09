@@ -14,13 +14,14 @@ returns a job id immediately and the UI polls ``GET /api/jobs/{id}``.
 from __future__ import annotations
 
 import asyncio
+import os
 import time
 import traceback
 import uuid
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
@@ -193,6 +194,81 @@ def _reap_jobs() -> None:
     cutoff = time.time() - JOB_TTL_S
     for jid in [j for j, job in JOBS.items() if job.created < cutoff]:
         JOBS.pop(jid, None)
+
+
+# --------------------------------------------------------------------------- #
+# Rate limiting
+#
+# webapp/README.md §Deploying names this as a prerequisite for going public, and
+# it is not about abuse so much as arithmetic: one /api/analyze call fetches up
+# to MAX_TILES images from a third-party provider and then spends ~11 s of CPU
+# on inference. A handful of concurrent callers will exhaust the tile provider's
+# goodwill and the box's cores at the same time, and the tile ToS is not ours to
+# spend.
+#
+# A fixed-window counter per client, in memory. Deliberately not Redis: jobs are
+# already in-process (README §Deploying), so a second worker would break job
+# lookup long before it broke this. When that changes, both move together.
+#
+# Off by default so localhost development is unaffected — set RSOLAR_RATE_LIMIT
+# to enable, e.g. RSOLAR_RATE_LIMIT=30/3600 for 30 heavy calls an hour.
+# --------------------------------------------------------------------------- #
+def _parse_rate_limit(spec: str) -> tuple[int, float] | None:
+    """"<calls>/<seconds>" -> (calls, window). None when unset or malformed."""
+    spec = (spec or "").strip()
+    if not spec:
+        return None
+    try:
+        calls, _, window = spec.partition("/")
+        n, w = int(calls), float(window or 3600)
+        if n <= 0 or w <= 0:
+            raise ValueError
+        return n, w
+    except ValueError:
+        print(f"[rate-limit] ignoring malformed RSOLAR_RATE_LIMIT={spec!r} — "
+              f"expected '<calls>/<seconds>', e.g. '30/3600'")
+        return None
+
+
+RATE_LIMIT = _parse_rate_limit(os.environ.get("RSOLAR_RATE_LIMIT", ""))
+_RATE_HITS: dict[str, list[float]] = {}
+
+
+def _client_key(request: Request | None) -> str:
+    """Who is calling. Honours X-Forwarded-For, since anything public sits
+    behind a proxy and every caller would otherwise share one bucket."""
+    if request is None:
+        return "unknown"
+    fwd = request.headers.get("x-forwarded-for", "")
+    if fwd:
+        return fwd.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def _check_rate_limit(request: Request | None) -> None:
+    """Raise 429 when this client has spent its budget."""
+    if RATE_LIMIT is None:
+        return
+    calls, window = RATE_LIMIT
+    now = time.time()
+    key = _client_key(request)
+    hits = [t for t in _RATE_HITS.get(key, []) if now - t < window]
+    if len(hits) >= calls:
+        retry = int(window - (now - hits[0])) + 1
+        _RATE_HITS[key] = hits
+        raise HTTPException(
+            429, f"rate limit reached ({calls} requests per {int(window)}s). "
+                 f"Each analysis fetches map tiles and runs inference, so this "
+                 f"protects both the tile provider and the server. "
+                 f"Try again in {retry}s.",
+            headers={"Retry-After": str(retry)})
+    hits.append(now)
+    _RATE_HITS[key] = hits
+    # Opportunistic cleanup so idle clients do not accumulate forever.
+    if len(_RATE_HITS) > 4096:
+        for k in [k for k, v in _RATE_HITS.items()
+                  if not any(now - t < window for t in v)]:
+            _RATE_HITS.pop(k, None)
 
 
 # --------------------------------------------------------------------------- #
@@ -510,7 +586,8 @@ async def run_calibration(job: Job, req: CalibrateRequest) -> None:
 # Routes
 # --------------------------------------------------------------------------- #
 @app.post("/api/analyze")
-async def analyze(req: AnalyzeRequest):
+async def analyze(req: AnalyzeRequest, request: Request = None):
+    _check_rate_limit(request)
     _reap_jobs()
     job = Job(id=uuid.uuid4().hex[:12])
     JOBS[job.id] = job
@@ -527,8 +604,11 @@ async def job_status(job_id: str):
 
 
 @app.post("/api/calibrate")
-async def calibrate(req: CalibrateRequest):
+async def calibrate(req: CalibrateRequest, request: Request = None):
     """Measure the detection threshold for this AOI. Returns a job id."""
+    # Calibration is heavier than analysis: it fetches a mosaic AND queries
+    # Overpass, which rate-limits hard and is a shared free service.
+    _check_rate_limit(request)
     _reap_jobs()
     job = Job(id=uuid.uuid4().hex[:12])
     JOBS[job.id] = job

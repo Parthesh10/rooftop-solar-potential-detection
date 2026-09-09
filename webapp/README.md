@@ -276,9 +276,31 @@ fetching, 8 s of inference, 0.6 s of vectorisation.
 
 It is already a single container: `pip install -r requirements-webapp.txt`, copy
 `webapp/`, run `uvicorn webapp.app:app`. Nothing needs torch — ONNX Runtime is
-~50 MB against torch's ~2.5 GB. Before going public: check the tile ToS, put a
-rate limit in front of `/api/analyze`, and move jobs to Redis if you want more
-than one worker.
+~50 MB against torch's ~2.5 GB.
+
+**Rate limiting is built in and off by default**, so local development is
+unaffected. Turn it on for anything public:
+
+```bash
+RSOLAR_RATE_LIMIT=30/3600 uvicorn webapp.app:app --host 0.0.0.0 --port 8000
+```
+
+`<calls>/<seconds>`, applied per client to `/api/analyze` and `/api/calibrate` —
+the two endpoints that fetch tiles and run inference. It honours
+`X-Forwarded-For`, so behind a proxy it keys on the real caller rather than
+putting the whole world in one bucket. A malformed value logs a warning and
+disables the limit rather than failing silently.
+
+The reason is arithmetic, not abuse: one analyse call pulls up to `MAX_TILES`
+images from a third-party provider and then spends ~11 s of CPU. A handful of
+concurrent callers exhausts the tile provider's goodwill and the box's cores at
+the same time, and **the tile provider's ToS is not yours to spend** — read it
+before pointing this at the public internet.
+
+Still outstanding for a multi-worker deployment: jobs are in-process, so a
+second worker breaks `GET /api/jobs/{id}` lookup. Move both jobs and the rate
+limiter to Redis together when that day comes; the rate limiter is deliberately
+in-memory for exactly as long as the job store is.
 
 ## Correcting the detection
 
