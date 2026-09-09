@@ -322,8 +322,13 @@ async def run_analysis(job: Job, req: AnalyzeRequest) -> None:
         mosaic, n_failed = await fetch_mosaic(grid, provider["url"], tile_progress)
         if n_failed == grid.n_tiles:
             raise RuntimeError(
-                "every tile request failed — no imagery available here at this "
-                "zoom, or no internet connection.")
+                f"no usable imagery here at zoom {zoom}. The provider either "
+                f"refused every tile or returned its 'map data not yet "
+                f"available' placeholder, which is common over rural areas. "
+                f"Try a lower zoom, or a different tile provider. "
+                f"(Reporting this rather than an estimate is deliberate: a "
+                f"blank image would otherwise be detected as zero rooftops and "
+                f"reported as zero kWh.)")
 
         # --- 2. inference ---------------------------------------------------
         job.state, job.message = "detecting", "running the model"
@@ -390,8 +395,10 @@ async def run_analysis(job: Job, req: AnalyzeRequest) -> None:
         warnings: list[str] = []
         if n_failed:
             warnings.append(
-                f"{n_failed} of {grid.n_tiles} imagery tiles failed to load; "
-                f"those areas were treated as blank and may hide roofs.")
+                f"{n_failed} of {grid.n_tiles} imagery tiles were unavailable "
+                f"(the provider failed them, or returned a 'map data not yet "
+                f"available' placeholder). Those areas were treated as blank "
+                f"and may hide roofs, so this estimate is a lower bound.")
         warnings.extend(solar.sanity_check_capacity(est["capacity_kwp"]))
         if auto_threshold:
             if cal.verdict == "needs_finetuning":

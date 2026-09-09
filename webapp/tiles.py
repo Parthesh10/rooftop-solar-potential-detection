@@ -150,6 +150,33 @@ def _blank_tile() -> np.ndarray:
     return np.full((TILE_PX, TILE_PX, 3), 128, dtype=np.uint8)
 
 
+# A tile with fewer distinct colours than this is not photography.
+#
+# Esri answers "no imagery at this zoom" with HTTP 200 and a grey placeholder
+# reading "Map data not yet available" — so raise_for_status() is happy and the
+# fetch counts as a success. Measured 2026-09-09 over rural Bihar and rural
+# Maharashtra: both returned byte-identical mosaics, 123 unique colours, mean
+# 204.7, std 5.4, while a real Delhi mosaic has 202,347 colours and std 49.
+#
+# Without this check the failure is silent and looks like a *result*: the model
+# is handed a grey rectangle, correctly predicts nothing, and the user is told
+# "0 buildings, 0 kWh" — indistinguishable from "we looked, there are no roofs
+# here". For a tool whose whole output is an area estimate, reporting no imagery
+# as no rooftops is the worst kind of wrong answer.
+PLACEHOLDER_MAX_COLOURS = 600
+
+
+def _is_placeholder(arr: np.ndarray) -> bool:
+    """True when a 200 OK tile is a 'no imagery here' card rather than a photo.
+
+    Counting distinct colours separates the two cleanly and cheaply. Aerial
+    photography of anything — even desert or open water — carries sensor noise
+    and runs to thousands of distinct values; a rendered placeholder is flat
+    fill plus antialiased text.
+    """
+    return len(np.unique(arr.reshape(-1, arr.shape[-1]), axis=0)) < PLACEHOLDER_MAX_COLOURS
+
+
 async def _fetch_one(client, url_tmpl: str, z: int, x: int, y: int,
                      sem: asyncio.Semaphore) -> tuple[int, int, np.ndarray, bool]:
     url = url_tmpl.format(z=z, x=x, y=y)
@@ -161,7 +188,11 @@ async def _fetch_one(client, url_tmpl: str, z: int, x: int, y: int,
             img = Image.open(BytesIO(r.content)).convert("RGB")
             if img.size != (TILE_PX, TILE_PX):
                 img = img.resize((TILE_PX, TILE_PX), Image.Resampling.LANCZOS)
-            return x, y, np.asarray(img, dtype=np.uint8), True
+            arr = np.asarray(img, dtype=np.uint8)
+            # A 200 OK carrying "Map data not yet available" is a failure that
+            # looks like a success. Count it as failed so the caller can say
+            # "no imagery here" instead of "no rooftops here".
+            return x, y, arr, not _is_placeholder(arr)
         except Exception:
             # One dead tile must not sink the whole analysis — fill it grey and
             # report the count, so the UI can say coverage was incomplete.

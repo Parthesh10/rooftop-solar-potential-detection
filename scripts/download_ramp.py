@@ -39,6 +39,7 @@ import concurrent.futures as cf
 import json
 import random
 import sys
+import time
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -53,10 +54,26 @@ USER_AGENT = "rooftop-solar-potential-detection/1.0 (research)"
 S3_NS = "{http://s3.amazonaws.com/doc/2006-03-01/}"
 
 
-def _get(url: str, timeout: float = 60.0) -> bytes:
-    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return r.read()
+def _get(url: str, timeout: float = 60.0, attempts: int = 4) -> bytes:
+    """GET with backoff.
+
+    source.coop returns a transient 503 under load, and without a retry that
+    lands on the *listing* call and kills an entire dataset download before a
+    single tile is fetched — which is exactly how a 400-tile Dhaka run failed on
+    2026-09-09. Retrying here rather than in a shell loop means a hiccup costs
+    seconds instead of restarting the whole listing.
+    """
+    last: Exception | None = None
+    for i in range(attempts):
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                return r.read()
+        except Exception as exc:                      # 503, timeout, reset
+            last = exc
+            if i < attempts - 1:
+                time.sleep(2 ** i)                    # 1s, 2s, 4s
+    raise last if last else RuntimeError(f"failed: {url}")
 
 
 def list_datasets() -> list[str]:
