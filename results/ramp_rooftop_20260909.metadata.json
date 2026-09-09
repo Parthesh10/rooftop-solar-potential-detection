@@ -1,0 +1,23 @@
+{
+  "base_checkpoint": "joint_v3_world25_20260908.pt",
+  "arch": "unet++",
+  "encoder": "efficientnet-b0",
+  "stats_key": "imagenet",
+  "freeze_epochs": 3,
+  "total_epochs": 30,
+  "lr": 1e-05,
+  "pos_weight": 2.4,
+  "dice_weight": 0.6,
+  "n_train_tiles": 929,
+  "n_val_tiles": 127,
+  "best_val_iou": 0.738511219610357,
+  "best_epoch": 27,
+  "label_semantics": "rooftop",
+  "ignore_value": null,
+  "holdout_aoi": null,
+  "trained_on": "ramp_train",
+  "not_comparable_to": "Inria pooled IoU 0.7712 \u2014 different label semantics, different cities, and a val set of a few dozen hand-drawn tiles",
+  "train_data_dir": "data/ramp_train",
+  "_provenance": "ramp Accra + Dhaka + Nairobi, 1056 tiles, human-drawn ROOFTOP labels at 30 cm, CC-BY-NC-4.0. Karnataka was held out so it stays a clean benchmark. The earlier 'hand-labelled-indian' value was a hardcoded string from this script's original purpose and was false here.",
+  "licence": "CC-BY-NC-4.0 (non-commercial) \u2014 inherited from ramp"
+}

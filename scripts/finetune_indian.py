@@ -317,10 +317,17 @@ def main() -> None:
         "label_semantics": args.label_semantics,
         "ignore_value": args.ignore_value,
         "holdout_aoi": args.holdout_aoi,
-        "trained_on": "hand-labelled-indian",
+        # Record the directory actually trained on, not a hardcoded guess. This
+        # script started life fine-tuning hand-labelled Indian tiles and the
+        # string said so; it is now also used for ramp's rooftop labels from
+        # Accra, Dhaka and Nairobi, where "hand-labelled-indian" would be
+        # simply false. Provenance that quietly goes stale is exactly what
+        # model/manifest.json exists to prevent (F-01).
+        "trained_on": str(data_dir.name),
+        "train_data_dir": str(data_dir),
         "not_comparable_to": (
             "Inria pooled IoU 0.7712 — different label semantics, different "
-            "cities, and a val set of a few dozen hand-drawn tiles"),
+            "cities, and a small held-out split of the same tile set"),
     }, indent=2), encoding="utf-8")
 
     print(f"\nsaved: {out_path}")
