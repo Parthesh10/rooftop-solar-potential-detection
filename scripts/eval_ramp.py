@@ -117,6 +117,11 @@ def main() -> None:
     ap.add_argument("--erode-border", type=int, default=32,
                     help="pixels dropped from each edge in the second score, to "
                         "test how much the reflect-padded border distorts things")
+    ap.add_argument("--sweep", action="store_true",
+                    help="score every threshold from 0.30 to 0.65. Probabilities "
+                        "are computed ONCE per tile and every cut point scored "
+                        "against the same cached array, so the sweep costs one "
+                        "forward pass rather than eight")
     ap.add_argument("--out", default=None)
     args = ap.parse_args()
 
@@ -176,8 +181,11 @@ def main() -> None:
         inter = union = p_sum = r_sum = 0.0
         b = args.erode_border
         i2 = u2 = 0.0
+        thresholds = (np.round(np.arange(0.30, 0.66, 0.05), 2).tolist()
+                      if args.sweep else [])
+        sweep = {t: [0.0, 0.0, 0.0] for t in thresholds}   # inter, union, pred
         for img, ref in tiles:
-            pred, _ = predict_mask(img, bundle, threshold=args.threshold)
+            pred, probs = predict_mask(img, bundle, threshold=args.threshold)
             pred = pred[:ref.shape[0], :ref.shape[1]]
             inter += np.logical_and(pred, ref).sum()
             union += np.logical_or(pred, ref).sum()
@@ -187,6 +195,16 @@ def main() -> None:
                 pc, rc = pred[b:-b, b:-b], ref[b:-b, b:-b]
                 i2 += np.logical_and(pc, rc).sum()
                 u2 += np.logical_or(pc, rc).sum()
+            # One forward pass already happened; every extra threshold is just a
+            # comparison against the cached probability array.
+            if thresholds:
+                pr = probs[:ref.shape[0], :ref.shape[1]]
+                for t in thresholds:
+                    m = pr > t
+                    acc = sweep[t]
+                    acc[0] += np.logical_and(m, ref).sum()
+                    acc[1] += np.logical_or(m, ref).sum()
+                    acc[2] += m.sum()
 
         row = {
             "checkpoint": ckpt.name, "arch": arch, "encoder": enc,
@@ -197,11 +215,31 @@ def main() -> None:
             "predicted_over_reference": round(p_sum / r_sum, 3) if r_sum else None,
             "iou_border_eroded": round(i2 / u2, 4) if u2 else None,
         }
+        if thresholds:
+            rows = []
+            for t in thresholds:
+                i, u, p = sweep[t]
+                rows.append({"threshold": t,
+                             "iou": round(i / u, 4) if u else None,
+                             "recall": round(i / r_sum, 4) if r_sum else None,
+                             "area_ratio": round(p / r_sum, 3) if r_sum else None})
+            best = max(rows, key=lambda r: r["iou"] or 0)
+            row["sweep"] = rows
+            row["best_threshold"] = best["threshold"]
+            row["best_iou"] = best["iou"]
+
         results.append(row)
         print(f"        IoU {row['iou']}  precision {row['precision']}  "
               f"recall {row['recall']}  area {row['predicted_over_reference']}x"
-              f"  (IoU excl. {b}px border {row['iou_border_eroded']})\n",
+              f"  (IoU excl. {b}px border {row['iou_border_eroded']})",
               flush=True)
+        if thresholds:
+            print("        thr    IoU   recall  area")
+            for r in row["sweep"]:
+                mark = "  <- best" if r["threshold"] == row["best_threshold"] else ""
+                print(f"        {r['threshold']:.2f} {r['iou']:>7.4f} "
+                      f"{r['recall']:>7.3f} {r['area_ratio']:>6.2f}{mark}")
+        print("", flush=True)
 
     print("=" * 74)
     print("model                                IoU   prec  recall  areaX  IoU-noedge")

@@ -137,8 +137,36 @@ WORLD_AOIS: dict[str, tuple[float, float, float, float]] = {
     "lima_sanjuan":         (-76.970, -12.160, -76.960, -12.152),
 }
 
+# Round 4, added 2026-09-09 — RURAL and small-town, because the ramp benchmark
+# found the gap that 25 dense-urban AOIs could not.
+#
+# Every AOI above is a dense urban block, chosen when the failure being chased
+# was dense low-rise housing. Scored against ramp's human-drawn rural Karnataka
+# labels the current model gets IoU 0.579, against 0.828 in Austin — sparse,
+# scattered, tree-shadowed buildings on red soil are simply a built form it has
+# never trained on. Fact 39 says the domain boundary is built form rather than
+# geography, so the fix is to add that form, not more places.
+#
+# Boxes sit on villages and small towns, deliberately away from the metros
+# above. A box that lands on empty farmland shows up as a very low building
+# count in this script's summary, which is the intended check.
+RURAL_AOIS: dict[str, tuple[float, float, float, float]] = {
+    # --- India: villages and small towns across four states ---
+    "rural_up_hardoi":       (80.130, 27.415, 80.140, 27.423),
+    "rural_bihar_chapra":    (84.740, 25.775, 84.750, 25.783),
+    "rural_mp_vidisha":      (77.805, 23.520, 77.815, 23.528),
+    "rural_maha_ahmednagar": (74.735, 19.090, 74.745, 19.098),
+    "rural_tn_thanjavur":    (79.135, 10.780, 79.145, 10.788),
+    "rural_wb_bardhaman":    (87.855, 23.245, 87.865, 23.253),
+    # --- Rural elsewhere, so the form generalises rather than memorising India ---
+    "rural_kenya_machakos":  (37.265, -1.520, 37.275, -1.512),
+    "rural_ghana_techiman":  (-1.940, 7.585, -1.930, 7.593),
+    "rural_indonesia_garut": (107.900, -7.215, 107.910, -7.207),
+    "rural_brazil_itapeva":  (-48.880, -23.980, -48.870, -23.972),
+}
+
 ALL_AOIS: dict[str, tuple[float, float, float, float]] = {
-    **INDIA_AOIS, **WORLD_AOIS}
+    **INDIA_AOIS, **WORLD_AOIS, **RURAL_AOIS}
 
 
 def precision_thresholds(cache: Path | None = None) -> list[dict]:
