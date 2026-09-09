@@ -124,6 +124,59 @@
         "Trained on the same five Western cities; more data from them, not more places."
       ]
     },
+    "ramp_rooftop_20260909.pt": {
+      "arch": "unet++",
+      "encoder": "efficientnet-b0",
+      "encoder_weights": null,
+      "in_channels": 3,
+      "out_channels": 1,
+      "bilinear": false,
+      "stats_key": "imagenet",
+      "threshold": 0.5,
+      "tta": false,
+      "trained_on": "ramp_train (Accra + Dhaka + Nairobi, 1056 tiles)",
+      "base_checkpoint": "joint_v3_world25_20260908.pt",
+      "epochs": 30,
+      "window": 512,
+      "gsd_m_per_px": 0.3,
+      "serving_zoom": 19,
+      "default": false,
+      "label_semantics": "rooftop",
+      "recommended_packing_factor": 0.7,
+      "licence": "CC-BY-NC-4.0 (non-commercial), inherited from ramp",
+      "note": "THE ONLY MODEL TRAINED ON ROOFTOP LABELS. Fine-tuned from the shipped default on 1056 human-drawn, exhaustively labelled ramp tiles whose target is the visible ROOF rather than the ground footprint — which is what this project actually needs, since it multiplies roof area into kWh. It beats the default on held-out Karnataka (IoU 0.579 -> 0.638) with BOTH precision and recall up, and costs 0.057 pooled Inria IoU. NOT the default for two independent reasons: the CC-BY-NC licence would infect the shipped model, and rooftop labels must not be blended with Inria's footprints in one training run (fact 25). Serve with RSOLAR_MODEL=ramp_rooftop_20260909.",
+      "metrics_verified": {
+        "harness": "scripts/eval_ramp.py on held-out ramp Karnataka (494 tiles, 3,945 human-drawn rooftops) and scripts/eval_inria.py (pooled, 25 official val tiles)",
+        "measured": "2026-09-09",
+        "karnataka_heldout_at_0.50": {
+          "iou": 0.638,
+          "precision": 0.744,
+          "recall": 0.817,
+          "predicted_over_reference": 1.1,
+          "default_iou": 0.579,
+          "default_precision": 0.727,
+          "default_recall": 0.739,
+          "default_area_ratio": 1.02,
+          "note": "Karnataka was held out of this model's training by construction, so this is a clean comparison. Precision AND recall both improved, which rules out a threshold trade."
+        },
+        "val": {
+          "iou": 0.7099,
+          "f1": 0.8303,
+          "precision": 0.8062,
+          "recall": 0.8559,
+          "threshold": 0.5,
+          "default_iou": 0.7671,
+          "note": "Costs 0.057 pooled Inria IoU against the default - a real trade, though smaller than the ~0.10 that fine-tuning on narrow tile sets cost historically (fact 29)."
+        },
+        "ramp_holdout_val_iou": 0.7385
+      },
+      "limitations": [
+        "CC-BY-NC-4.0: non-commercial only. This is why it is not the default and is not published to a GitHub release.",
+        "Predicts ROOFTOPS, not ground footprints. Its IoU is not comparable with any Inria or OSM footprint figure.",
+        "Slightly over-predicts area on the one region measured (1.10x actual against the default's 1.02x), which matters because area is multiplied into kWh.",
+        "Trained on three African/South-Asian cities; untested outside ramp's regions."
+      ]
+    },
     "joint_v3_world25_20260908.pt": {
       "arch": "unet++",
       "encoder": "efficientnet-b0",

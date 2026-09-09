@@ -1,0 +1,34 @@
+{
+  "dataset": "ramp_karnataka_india",
+  "source": "ramp (source.coop), CC-BY-NC-4.0",
+  "tiles": 494,
+  "labelled_buildings": 3945,
+  "reference_roof_fraction": 0.1166,
+  "label_semantics": "rooftop (not ground footprint)",
+  "imagery": "Maxar ODP at 30 cm \u2014 NOT the Esri imagery the app serves",
+  "threshold": 0.5,
+  "models": [
+    {
+      "checkpoint": "joint_v3_world25_20260908.pt",
+      "arch": "unet++",
+      "encoder": "efficientnet-b0",
+      "threshold": 0.5,
+      "iou": 0.5786,
+      "precision": 0.727,
+      "recall": 0.7393,
+      "predicted_over_reference": 1.017,
+      "iou_border_eroded": 0.6044
+    },
+    {
+      "checkpoint": "ramp_rooftop_20260909.pt",
+      "arch": "unet++",
+      "encoder": "efficientnet-b0",
+      "threshold": 0.5,
+      "iou": 0.6377,
+      "precision": 0.7443,
+      "recall": 0.8165,
+      "predicted_over_reference": 1.097,
+      "iou_border_eroded": 0.663
+    }
+  ]
+}

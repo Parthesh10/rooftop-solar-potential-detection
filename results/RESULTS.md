@@ -1107,3 +1107,60 @@ support recall, and recall rewards a model for predicting more. Dhaka is
 precisely where that distinction bites: v3 predicts *less* area there than v2
 (0.47x against 0.58x), which an OSM recall metric would have shown as a
 difference and an exhaustive IoU shows as a regression.
+
+---
+
+## Training on rooftop labels: the ramp fine-tune (2026-09-09)
+
+Every model this project has trained targets **ground footprints** — Inria, OSM
+and Open Buildings all label them. ramp targets the **visible rooftop**, which
+for a tall building is displaced from its footprint, and which is what a solar
+tool actually needs: the app multiplies *roof* area into kWh.
+
+`results/ramp_rooftop_20260909.pt` tests whether that distinction is worth
+anything. Fine-tuned from the current default on 1,056 human-drawn ramp tiles
+(Accra, Dhaka, Nairobi), encoder frozen for 3 epochs, lr 1e-5, 30 epochs, ~1 h
+on the local GTX 1650. **Karnataka was held out**, so it remains a clean test.
+
+### It wins where it should, and pays where you would expect
+
+| | Karnataka (held out, human truth) | Inria (pooled) |
+|---|---|---|
+| joint v3 — the default | 0.579 | **0.7671** |
+| **ramp rooftop** | **0.638** | 0.7099 |
+
+On Karnataka every column improves — IoU +0.059, precision 0.727 → 0.744,
+recall 0.739 → 0.817. **Precision and recall rising together** rules out a
+threshold trade; the model genuinely finds more roof and is more often right
+about it.
+
+The cost is 0.057 pooled Inria IoU. That is a real regression, though notably
+smaller than the ~0.10 that fine-tuning on narrow tile sets cost historically
+(fact 29) — starting from a model already trained on 25 AOIs evidently leaves
+less to forget.
+
+### Why it is not the default
+
+Two independent reasons, either sufficient:
+
+* **Licence.** ramp is CC-BY-NC-4.0. A model trained on it inherits the
+  non-commercial restriction, and the shipped default should not carry one that
+  Inria, Open Buildings and OSM do not. This is also why it is registered but
+  **not published to a GitHub release**.
+* **Semantics.** Rooftop and footprint labels answer "where does a roof end"
+  differently. Blending them in one training run is the incoherence that made
+  the envelope fine-tune unusable (fact 25), so `build_ramp_training.py`
+  deliberately offers no `--mix-inria`.
+
+Serve it with `RSOLAR_MODEL=ramp_rooftop_20260909`.
+
+### What it establishes
+
+**Rooftop-semantics labels are worth real accuracy for this task** — 0.059 IoU
+on a held-out region, from 1,056 tiles and an hour of local GPU. ramp has ~93,000
+more. If the licence were acceptable, or an equivalently-labelled permissive
+dataset existed, that is the largest single lever left on model quality.
+
+One caveat worth keeping: it predicts 1.10x the real roof area on Karnataka
+against the default's 1.02x. For a tool that turns area into money, an 8%
+over-estimate is not free, and it has been measured in exactly one region.
