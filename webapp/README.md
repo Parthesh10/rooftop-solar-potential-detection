@@ -272,11 +272,43 @@ Measured on this machine (Ryzen CPU, ONNX Runtime, no GPU): a 48-tile AOI —
 2048×1536 px, 35 windows — takes **~11 s** end to end. Roughly 2 s of tile
 fetching, 8 s of inference, 0.6 s of vectorisation.
 
-## Deploying later
+## Deploying
 
-It is already a single container: `pip install -r requirements-webapp.txt`, copy
-`webapp/`, run `uvicorn webapp.app:app`. Nothing needs torch — ONNX Runtime is
-~50 MB against torch's ~2.5 GB.
+**A `Dockerfile` is at the repo root, built and verified working** (2026-09-10):
+it installs `requirements-webapp.txt`, fetches the current default model
+straight from the public GitHub Release (`v1.3-world25` — no credentials
+needed, the repo and its releases are public), and runs `uvicorn` as an
+unprivileged user with a `/api/health` check wired in. Nothing needs torch —
+ONNX Runtime is ~50 MB against torch's ~2.5 GB.
+
+The verification that matters: `webapp/app.py` was imported and served with
+`torch` and `segmentation_models_pytorch` genuinely absent from the
+environment (not just unused), from a clean venv holding only
+`requirements-webapp.txt`'s pins, hitting the real exported model — 16 routes
+registered, `/`, `/api/health` and `/api/model` all returned correctly. That
+same pin set had never actually been installed before doing this: **the
+previous `pyproj==3.8.1` pin does not exist on PyPI**, so
+`pip install -r requirements-webapp.txt` — line one of this file's own
+instructions — would have failed outright. Fixed to the versions this project
+actually runs (fact 49 in `CLAUDE.md`).
+
+Two ready-made platform configs sit next to the Dockerfile:
+
+* **`render.yaml`** — connect the repo at [render.com](https://render.com),
+  it finds this file, one click to a public URL. Free tier: sleeps after 15 min
+  idle, 512 MB RAM.
+* **`fly.toml`** — `flyctl launch` picks it up; scales to zero when idle
+  (`auto_stop_machines`) so a demo costs nothing while unused.
+
+Building and pushing either needs an account on that platform, which is the one
+step that has to happen from a browser — everything else here is already done.
+A plain `docker build .` works anywhere Docker runs, including a VPS with no
+platform lock-in at all:
+
+```bash
+docker build -t rooftop-solar .
+docker run -p 8000:8000 -e RSOLAR_RATE_LIMIT=30/3600 rooftop-solar
+```
 
 **Rate limiting is built in and off by default**, so local development is
 unaffected. Turn it on for anything public:

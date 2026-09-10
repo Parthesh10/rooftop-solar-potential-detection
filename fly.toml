@@ -1,0 +1,31 @@
+# Fly.io — alternative to render.yaml for a host that doesn't cold-sleep.
+# `flyctl launch` picks this up automatically; `flyctl deploy` after that.
+# Fly assigns its own internal port via $PORT, which the Dockerfile's CMD
+# already reads (${PORT:-8000}), so internal_port here just has to match.
+app = "rooftop-solar-detection"
+primary_region = "bom"          # Mumbai — closest to the project's own AOIs;
+                                 # change to whichever region is closest to you
+
+[build]
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_stop_machines = "stop"   # scales to zero when idle — this is what
+  auto_start_machines = true    # keeps a demo on the free allowance cheap
+  min_machines_running = 0
+
+[[http_service.checks]]
+  interval = "30s"
+  timeout = "5s"
+  grace_period = "10s"
+  method = "GET"
+  path = "/api/health"
+
+[env]
+  RSOLAR_RATE_LIMIT = "30/3600"
+
+[[vm]]
+  memory = "512mb"
+  cpu_kind = "shared"
+  cpus = 1

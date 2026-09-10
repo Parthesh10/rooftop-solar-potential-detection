@@ -1,0 +1,18 @@
+# Keep the build context small and never leak the training stack or data into
+# an image whose whole point is to NOT carry torch (~2.5 GB) or raw imagery.
+.git/
+.venv/
+data/
+dataset/
+results/
+runs/
+kaggle*/
+Archived-Meta-Data/
+webapp/models/
+webapp/.cache/
+__pycache__/
+*.pyc
+.pytest_cache/
+tests/
+*.md
+!webapp/README.md

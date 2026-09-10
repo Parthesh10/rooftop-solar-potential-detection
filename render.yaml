@@ -1,0 +1,25 @@
+# Render (render.com) Blueprint — the fastest path to a public URL from this
+# Dockerfile: connect the GitHub repo, Render finds this file, one click.
+#
+# Free tier notes, both real constraints for this app: the instance sleeps
+# after 15 min idle (a cold request pays the ~10 s onnxruntime + model-load
+# cost) and it has 512 MB RAM, which is enough for one ONNX model (~25 MB
+# loaded) plus a handful of concurrent tile-fetch jobs — do not raise
+# --workers without also raising the plan.
+services:
+  - type: web
+    name: rooftop-solar-detection
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /api/health
+    envVars:
+      # Off by default (webapp/app.py) — turn on before any real traffic.
+      # 30 heavy calls/hour/client: generous for a demo, cheap enough that a
+      # runaway script cannot exhaust the free tile-provider quota or the
+      # instance's one CPU.
+      - key: RSOLAR_RATE_LIMIT
+        value: "30/3600"
+      # RSOLAR_TILE_PROVIDER=mapbox + RSOLAR_MAPBOX_TOKEN is the documented
+      # escape hatch (webapp/config.py) if Esri's free tier proves too limited
+      # for public traffic — set both together, never just the token.
