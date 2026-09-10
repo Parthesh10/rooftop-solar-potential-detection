@@ -14,5 +14,7 @@ __pycache__/
 *.pyc
 .pytest_cache/
 tests/
+# All docs, including webapp/README.md. A serving image has no use for them,
+# and excluding them from the build context means a doc edit does not
+# invalidate the `COPY webapp/` layer and trigger a rebuild.
 *.md
-!webapp/README.md

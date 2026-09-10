@@ -274,12 +274,20 @@ fetching, 8 s of inference, 0.6 s of vectorisation.
 
 ## Deploying
 
-**A `Dockerfile` is at the repo root, built and verified working** (2026-09-10):
-it installs `requirements-webapp.txt`, fetches the current default model
-straight from the public GitHub Release (`v1.3-world25` — no credentials
-needed, the repo and its releases are public), and runs `uvicorn` as an
-unprivileged user with a `/api/health` check wired in. Nothing needs torch —
-ONNX Runtime is ~50 MB against torch's ~2.5 GB.
+**Live at https://rooftop-solar-detection-eh4o.onrender.com** (Render free tier,
+since 2026-09-11). It **auto-deploys on every push to `main`** — the build is
+~40 s once Docker layers are warm — so there is no separate release step.
+
+The `Dockerfile` at the repo root installs `requirements-webapp.txt`, fetches
+the current default model straight from the public GitHub Release
+(`v1.3-world25` — no credentials needed, the repo and its releases are public),
+and runs `uvicorn` as an unprivileged user with a `/api/health` check wired in.
+Nothing needs torch — ONNX Runtime is ~50 MB against torch's ~2.5 GB.
+
+**Free-tier realities:** the instance sleeps after 15 min idle (first request
+after that pays ~1 min cold start + model load), 750 instance-hours/month,
+512 MB RAM, one shared CPU. `RSOLAR_RATE_LIMIT=30/3600` is set both in
+`render.yaml` and directly on the service.
 
 The verification that matters: `webapp/app.py` was imported and served with
 `torch` and `segmentation_models_pytorch` genuinely absent from the
@@ -292,16 +300,14 @@ previous `pyproj==3.8.1` pin does not exist on PyPI**, so
 instructions — would have failed outright. Fixed to the versions this project
 actually runs (fact 49 in `CLAUDE.md`).
 
-Two ready-made platform configs sit next to the Dockerfile:
+### Moving or reproducing it
 
-* **`render.yaml`** — connect the repo at [render.com](https://render.com),
-  it finds this file, one click to a public URL. Free tier: sleeps after 15 min
-  idle, 512 MB RAM.
-* **`fly.toml`** — `flyctl launch` picks it up; scales to zero when idle
-  (`auto_stop_machines`) so a demo costs nothing while unused.
+* **`render.yaml`** — the Blueprint that created the live service. Connect the
+  repo at [render.com](https://render.com), it finds this file.
+* **`fly.toml`** — `flyctl launch` picks it up; scales to zero when idle. Note
+  Fly no longer has a free tier (2-hour / 7-day trial, then pay-as-you-go
+  ~$2–5/mo), so this is for an always-on paid deployment, not a free one.
 
-Building and pushing either needs an account on that platform, which is the one
-step that has to happen from a browser — everything else here is already done.
 A plain `docker build .` works anywhere Docker runs, including a VPS with no
 platform lock-in at all:
 

@@ -1,4 +1,8 @@
-# Fly.io — alternative to render.yaml for a host that doesn't cold-sleep.
+# Fly.io — for an always-on PAID deployment, not a free one. Fly dropped its
+# free tier in 2024: new signups get a 2-hour / 7-day trial, then a card is
+# required and it is pay-as-you-go (~$2-5/mo for an app this size). The live
+# deployment is on Render's free tier (render.yaml); this file is here for
+# whoever wants no cold-sleep and is willing to pay for it.
 # `flyctl launch` picks this up automatically; `flyctl deploy` after that.
 # Fly assigns its own internal port via $PORT, which the Dockerfile's CMD
 # already reads (${PORT:-8000}), so internal_port here just has to match.
