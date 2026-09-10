@@ -1,11 +1,11 @@
 # Render (render.com) Blueprint — the fastest path to a public URL from this
 # Dockerfile: connect the GitHub repo, Render finds this file, one click.
 #
-# Free tier notes, both real constraints for this app: the instance sleeps
-# after 15 min idle (a cold request pays the ~10 s onnxruntime + model-load
-# cost) and it has 512 MB RAM, which is enough for one ONNX model (~25 MB
-# loaded) plus a handful of concurrent tile-fetch jobs — do not raise
-# --workers without also raising the plan.
+# The free tier hands out **0.15 of a CPU core** and 512 MB RAM. That is enough
+# to serve small analyses if — and only if — the four env vars below are set:
+# without them the first real user drew a 16-tile box with "High accuracy" on,
+# and it ran for 10+ minutes while they watched a spinner. All four are plain
+# os.environ reads with no-op defaults, so they change nothing locally.
 services:
   - type: web
     name: rooftop-solar-detection
@@ -14,12 +14,23 @@ services:
     plan: free
     healthCheckPath: /api/health
     envVars:
-      # Off by default (webapp/app.py) — turn on before any real traffic.
-      # 30 heavy calls/hour/client: generous for a demo, cheap enough that a
-      # runaway script cannot exhaust the free tile-provider quota or the
-      # instance's one CPU.
+      # 30 heavy calls/hour/client — protects the one CPU and the tile
+      # provider's ToS. Off by default in code; must be on for public traffic.
       - key: RSOLAR_RATE_LIMIT
         value: "30/3600"
+      # "High accuracy" (TTA) is 8 forward passes per window — fine on a real
+      # core, a 10-minute hang on 0.15 of one. The server ignores tta=true and
+      # /api/config tells the UI to grey the toggle out.
+      - key: RSOLAR_DISABLE_TTA
+        value: "1"
+      # Wall-clock cap on one analysis, checked between sliding windows. A
+      # too-large area fails with a readable message instead of never finishing.
+      - key: RSOLAR_JOB_TIMEOUT_S
+        value: "120"
+      # Cap the drawable box (default is 256) so the worst case still lands
+      # inside the timeout: ~20 tiles is ~40 s of inference here.
+      - key: RSOLAR_MAX_TILES
+        value: "20"
       # RSOLAR_TILE_PROVIDER=mapbox + RSOLAR_MAPBOX_TOKEN is the documented
       # escape hatch (webapp/config.py) if Esri's free tier proves too limited
       # for public traffic — set both together, never just the token.

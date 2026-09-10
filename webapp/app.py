@@ -29,8 +29,10 @@ from pydantic import BaseModel, Field, field_validator
 from webapp import calibration, coverage, geometry, regions, solar
 from webapp.config import (
     ASSUMPTION_SOURCES,
+    JOB_TIMEOUT_S,
     MAX_TILES,
     SERVING_ZOOM,
+    TTA_ENABLED,
     WEBAPP_ROOT,
     SolarParams,
     tile_provider_config,
@@ -287,6 +289,27 @@ async def run_analysis(job: Job, req: AnalyzeRequest) -> None:
                 f"area too large: {grid.n_tiles} tiles at z{zoom} "
                 f"(limit {MAX_TILES}). Draw a smaller box, or lower the zoom.")
 
+        # Wall-clock guard for constrained hosts (see config.JOB_TIMEOUT_S). The
+        # check is threaded through the progress callbacks below, so it fires
+        # between sliding windows — inside the executor thread where the CPU
+        # time is actually spent — rather than needing to cancel that thread.
+        deadline = time.monotonic() + JOB_TIMEOUT_S if JOB_TIMEOUT_S > 0 else None
+
+        def _check_deadline() -> None:
+            if deadline and time.monotonic() > deadline:
+                raise TimeoutError(
+                    f"analysis passed {JOB_TIMEOUT_S:.0f}s and was stopped. "
+                    f"This instance has a small CPU budget — draw a smaller "
+                    f"area (you asked for {grid.n_tiles} tiles) and leave "
+                    f"'High accuracy' off.")
+
+        # TTA is 8 forward passes per window. On a fractional CPU that turns a
+        # slow analysis into one the user reads as hung, so a host can switch it
+        # off entirely (config.TTA_ENABLED). Fall back silently and say so in
+        # the result rather than refusing the request.
+        tta = bool(req.tta) and TTA_ENABLED
+        tta_suppressed = bool(req.tta) and not TTA_ENABLED
+
         centre_lat = (b.north + b.south) / 2.0
         centre_lon = (b.east + b.west) / 2.0
         mpp = metres_per_pixel(centre_lat, zoom)
@@ -316,6 +339,7 @@ async def run_analysis(job: Job, req: AnalyzeRequest) -> None:
         job.state, job.message = "fetching", f"fetching {grid.n_tiles} tiles"
 
         def tile_progress(done: int, total: int) -> None:
+            _check_deadline()
             job.progress = 0.45 * done / max(total, 1)
             job.message = f"fetching imagery {done}/{total}"
 
@@ -332,9 +356,10 @@ async def run_analysis(job: Job, req: AnalyzeRequest) -> None:
 
         # --- 2. inference ---------------------------------------------------
         job.state, job.message = "detecting", "running the model"
-        suffix = " (high accuracy, 8 passes)" if req.tta else ""
+        suffix = " (high accuracy, 8 passes)" if tta else ""
 
         def infer_progress(done: int, total: int) -> None:
+            _check_deadline()
             job.progress = 0.45 + 0.40 * done / max(total, 1)
             job.message = f"detecting rooftops {done}/{total} windows{suffix}"
 
@@ -342,7 +367,7 @@ async def run_analysis(job: Job, req: AnalyzeRequest) -> None:
         mask, probs = await loop.run_in_executor(
             None,
             lambda: predict_mask(mosaic, bundle, threshold=threshold,
-                                 tta=req.tta, progress=infer_progress),
+                                 tta=tta, progress=infer_progress),
         )
 
         # The probability map is the evidence for the histogram step, so this
@@ -393,6 +418,12 @@ async def run_analysis(job: Job, req: AnalyzeRequest) -> None:
 
         aoi_area = geometry.bounds_area_m2(b.west, b.south, b.east, b.north)
         warnings: list[str] = []
+        if tta_suppressed:
+            warnings.append(
+                "'High accuracy' was requested but is disabled on this "
+                "instance — it runs the model 8x per window and needs more CPU "
+                "than the free tier provides. The estimate is from a single "
+                "pass.")
         if n_failed:
             warnings.append(
                 f"{n_failed} of {grid.n_tiles} imagery tiles were unavailable "
@@ -450,7 +481,7 @@ async def run_analysis(job: Job, req: AnalyzeRequest) -> None:
                 "threshold_source": cal.source,
                 "model_default_threshold": bundle.threshold,
                 "morph_kernel_px": morph_kernel,
-                "tta": req.tta,
+                "tta": tta,
             },
             "model": bundle.card(),
             "assumptions": params.to_dict(),
@@ -459,6 +490,12 @@ async def run_analysis(job: Job, req: AnalyzeRequest) -> None:
         }
         job.state, job.message, job.progress = "done", "complete", 1.0
 
+    except TimeoutError as exc:
+        # A deliberate stop on a constrained host, not a crash — no stack trace,
+        # and a message the UI can show verbatim.
+        job.state = "error"
+        job.error = str(exc)
+        job.message = "stopped — area too large for this instance"
     except Exception as exc:
         job.state = "error"
         job.error = f"{type(exc).__name__}: {exc}"
@@ -486,6 +523,17 @@ async def run_calibration(job: Job, req: CalibrateRequest) -> None:
                 f"area too large to calibrate: {grid.n_tiles} tiles at z{zoom} "
                 f"(limit {MAX_TILES}). Draw a smaller box.")
 
+        deadline = time.monotonic() + JOB_TIMEOUT_S if JOB_TIMEOUT_S > 0 else None
+
+        def _check_deadline() -> None:
+            if deadline and time.monotonic() > deadline:
+                raise TimeoutError(
+                    f"calibration passed {JOB_TIMEOUT_S:.0f}s and was stopped. "
+                    f"Draw a smaller box ({grid.n_tiles} tiles is too many for "
+                    f"this instance's CPU budget).")
+
+        tta = bool(req.tta) and TTA_ENABLED
+
         centre_lat = (b.north + b.south) / 2.0
         centre_lon = (b.east + b.west) / 2.0
         cov = coverage.coverage_note(centre_lat, centre_lon)
@@ -502,6 +550,7 @@ async def run_calibration(job: Job, req: CalibrateRequest) -> None:
         job.message = f"{len(rings)} mapped buildings found"
 
         def tile_progress(done: int, total: int) -> None:
+            _check_deadline()
             job.progress = 0.15 + 0.35 * done / max(total, 1)
             job.message = f"fetching imagery {done}/{total}"
 
@@ -512,6 +561,7 @@ async def run_calibration(job: Job, req: CalibrateRequest) -> None:
         job.state, job.message = "detecting", "running the model"
 
         def infer_progress(done: int, total: int) -> None:
+            _check_deadline()
             job.progress = 0.50 + 0.40 * done / max(total, 1)
             job.message = f"scoring rooftops {done}/{total} windows"
 
@@ -520,7 +570,7 @@ async def run_calibration(job: Job, req: CalibrateRequest) -> None:
         # deciding where to cut it is the entire point of this job.
         _, probs = await loop.run_in_executor(
             None,
-            lambda: predict_mask(mosaic, bundle, threshold=0.5, tta=req.tta,
+            lambda: predict_mask(mosaic, bundle, threshold=0.5, tta=tta,
                                  progress=infer_progress),
         )
 
@@ -582,6 +632,10 @@ async def run_calibration(job: Job, req: CalibrateRequest) -> None:
         }
         job.state, job.message, job.progress = "done", "complete", 1.0
 
+    except TimeoutError as exc:
+        job.state = "error"
+        job.error = str(exc)
+        job.message = "stopped — area too large for this instance"
     except Exception as exc:
         job.state = "error"
         job.error = f"{type(exc).__name__}: {exc}"
@@ -757,7 +811,9 @@ async def client_config():
         model_ok, model_err = False, exc.detail
     return {"serving_zoom": SERVING_ZOOM, "max_tiles": MAX_TILES,
             "tile_provider": prov, "tile_provider_error": err,
-            "model_ready": model_ok, "model_error": model_err}
+            "model_ready": model_ok, "model_error": model_err,
+            "tta_available": TTA_ENABLED,
+            "job_timeout_s": JOB_TIMEOUT_S or None}
 
 
 @app.get("/api/health")

@@ -77,6 +77,25 @@ MAPBOX_TOKEN = os.environ.get("RSOLAR_MAPBOX_TOKEN", "")
 # Guard rails. A 1 km^2 AOI at z=19 is ~180 tiles and tens of seconds of CPU
 # inference; without a cap a stray drag can request a whole city.
 MAX_TILES = int(os.environ.get("RSOLAR_MAX_TILES", "256"))
+
+# Wall-clock cap on one analysis job. 0 = no cap, which is the local default: a
+# full CPU core clears a 48-tile block in ~11 s and there is nothing to
+# interrupt. Set it on a constrained host. Render's free tier hands out **0.15
+# of a CPU core** and 512 MB, where that same block takes ~75 s and a
+# test-time-augmentation run takes ~10 minutes — long enough that the user
+# assumes the page has hung, which is exactly what happened on the first public
+# deploy. `RSOLAR_JOB_TIMEOUT_S=120` there. The check runs between sliding
+# windows via the progress callback, so a timed-out job stops within one window
+# of the deadline rather than running to completion in a background thread.
+JOB_TIMEOUT_S = float(os.environ.get("RSOLAR_JOB_TIMEOUT_S", "0"))
+
+# Test-time augmentation runs the model 8x per window for ~+1 IoU / +2
+# precision. Worth it on a real core; hopeless on 0.15 of one. With
+# `RSOLAR_DISABLE_TTA=1` the server ignores `tta=true` and `/api/config`
+# reports `tta_available: false` so the UI can disable the toggle.
+TTA_ENABLED = os.environ.get("RSOLAR_DISABLE_TTA", "").strip().lower() not in (
+    "1", "true", "yes", "on")
+
 TILE_FETCH_CONCURRENCY = 8
 TILE_TIMEOUT_S = 20.0
 USER_AGENT = "rooftop-solar-potential-detection/1.0 (research; localhost)"

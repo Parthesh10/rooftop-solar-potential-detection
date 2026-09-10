@@ -51,6 +51,18 @@ async function boot() {
   wireControls();
   initOnboarding();
 
+  // A constrained host (see config.TTA_ENABLED) can switch off test-time
+  // augmentation, because 8 passes per window on a fractional CPU reads as a
+  // hang. Disable the toggle so the option is not offered rather than silently
+  // ignored.
+  if (state.cfg.tta_available === false) {
+    const t = $('tta');
+    t.checked = false;
+    t.disabled = true;
+    const note = t.closest('label')?.querySelector('.switch-text span:last-child');
+    if (note) note.textContent = 'unavailable here — not enough CPU on this host';
+  }
+
   const p = state.cfg.tile_provider;
   $('attribution').innerHTML = p.attribution;
 
@@ -62,7 +74,7 @@ async function boot() {
       $('threshold').value = state.model.threshold;
       $('threshold-out').textContent = (+state.model.threshold).toFixed(2);
     }
-    if (state.model.tta) $('tta').checked = true;
+    if (state.model.tta && !$('tta').disabled) $('tta').checked = true;
   } catch { /* the model card is a nicety here, not a requirement */ }
 }
 

@@ -286,8 +286,19 @@ Nothing needs torch — ONNX Runtime is ~50 MB against torch's ~2.5 GB.
 
 **Free-tier realities:** the instance sleeps after 15 min idle (first request
 after that pays ~1 min cold start + model load), 750 instance-hours/month,
-512 MB RAM, one shared CPU. `RSOLAR_RATE_LIMIT=30/3600` is set both in
-`render.yaml` and directly on the service.
+512 MB RAM, and **0.15 of a CPU core** — an analysis that is ~11 s locally is
+~75 s here. Four env vars, all set on the service, keep that from turning into
+a hang:
+
+| var | value on Render | why |
+|---|---|---|
+| `RSOLAR_RATE_LIMIT` | `30/3600` | 30 heavy calls/hour/client — protects the one CPU and the tile provider's ToS |
+| `RSOLAR_DISABLE_TTA` | `1` | "High accuracy" is 8 passes/window; hopeless on 0.15 CPU. The server ignores `tta=true` and the UI greys the toggle out |
+| `RSOLAR_JOB_TIMEOUT_S` | `120` | wall-clock cap, checked between sliding windows, so a too-big area fails with a readable message instead of running forever |
+| `RSOLAR_MAX_TILES` | `20` | caps the drawable box to something that finishes inside the timeout |
+
+All four are plain `os.environ` reads with sane no-op defaults, so local
+development is unaffected — a full core needs none of them.
 
 The verification that matters: `webapp/app.py` was imported and served with
 `torch` and `segmentation_models_pytorch` genuinely absent from the
