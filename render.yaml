@@ -25,12 +25,16 @@ services:
         value: "1"
       # Wall-clock cap on one analysis, checked between sliding windows. A
       # too-large area fails with a readable message instead of never finishing.
+      # Measured on the live free instance: 12 tiles / 6 windows = 89 s. 16
+      # tiles is ~9 windows ~ 115 s, so 150 s leaves headroom for the fetch and
+      # the PVGIS call on top.
       - key: RSOLAR_JOB_TIMEOUT_S
-        value: "120"
-      # Cap the drawable box (default is 256) so the worst case still lands
-      # inside the timeout: ~20 tiles is ~40 s of inference here.
+        value: "150"
+      # Cap the drawable box (default is 256) so the worst case lands inside
+      # the timeout above. 16 tiles at z19 is roughly two dense city blocks —
+      # enough for a "does this work" demo, and it finishes.
       - key: RSOLAR_MAX_TILES
-        value: "20"
+        value: "16"
       # RSOLAR_TILE_PROVIDER=mapbox + RSOLAR_MAPBOX_TOKEN is the documented
       # escape hatch (webapp/config.py) if Esri's free tier proves too limited
       # for public traffic — set both together, never just the token.

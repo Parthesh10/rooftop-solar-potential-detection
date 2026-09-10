@@ -294,8 +294,8 @@ a hang:
 |---|---|---|
 | `RSOLAR_RATE_LIMIT` | `30/3600` | 30 heavy calls/hour/client — protects the one CPU and the tile provider's ToS |
 | `RSOLAR_DISABLE_TTA` | `1` | "High accuracy" is 8 passes/window; hopeless on 0.15 CPU. The server ignores `tta=true` and the UI greys the toggle out |
-| `RSOLAR_JOB_TIMEOUT_S` | `120` | wall-clock cap, checked between sliding windows, so a too-big area fails with a readable message instead of running forever |
-| `RSOLAR_MAX_TILES` | `20` | caps the drawable box to something that finishes inside the timeout |
+| `RSOLAR_JOB_TIMEOUT_S` | `150` | wall-clock cap, checked between sliding windows, so a too-big area fails with a readable message instead of running forever |
+| `RSOLAR_MAX_TILES` | `16` | caps the drawable box to something that finishes inside the timeout |
 
 All four are plain `os.environ` reads with sane no-op defaults, so local
 development is unaffected — a full core needs none of them.
